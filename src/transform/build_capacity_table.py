@@ -50,7 +50,10 @@ def build_wide_table(core_df):
 
     # Rename source indicator names to shorter analysis-friendly names.
     wide_df = wide_df.rename(columns=CORE_INDICATORS)
+
+    # Remove the pivot column-name label created by pandas.
     wide_df.columns.name = None
+
     return wide_df
 
 def add_completeness_flags(df):
@@ -65,46 +68,61 @@ def add_completeness_flags(df):
     ]
 
     df["is_complete"] = df[required_columns].notna().all(axis=1)
-    df["missing_metric_count"] = df[required_columns].isna().sum(axis=1)
+
+    df["missing_metric_count"] = (
+        df[required_columns]
+        .isna()
+        .sum(axis=1)
+    )
+
     return df
 
 def add_teacher_metrics(df):
     """Calculate teacher-capacity metrics and compare them with the DNEMIS source ratio."""
     df = df.copy()
 
-    # UBE learner-teacher benchmark from DNEMIS constants.parquet.
+    # DNEMIS learner-teacher benchmark.
     teacher_standard = 35.0
 
-    # Independently calculate the ratio for quality-control purposes.
+    # Independently calculate the learner-teacher ratio for quality control.
     df["calculated_learner_teacher_ratio"] = (
-        df["learners"] / df["teachers"].replace(0, pd.NA)
+        df["learners"]
+        / df["teachers"].replace(0, pd.NA)
     )
 
-    # Measure disagreement between our calculation and the DNEMIS source ratio.
+    # Measure disagreement between our calculation and the DNEMIS ratio.
     df["teacher_ratio_difference"] = (
         df["calculated_learner_teacher_ratio"]
         - df["source_learner_teacher_ratio"]
     ).abs()
 
-    # Use DNEMIS's published ratio as the primary pressure metric.
+    # Pressure index compares the source ratio with the benchmark.
+    # 1.0 means exactly at the benchmark.
+    # Above 1.0 means teacher pressure is higher than the benchmark.
     df["teacher_pressure_index"] = (
-        df["source_learner_teacher_ratio"] / teacher_standard
+        df["source_learner_teacher_ratio"]
+        / teacher_standard
     )
 
-    # Estimate teacher requirement at the benchmark ratio.
-    df["required_teachers"] = df["learners"] / teacher_standard
+    # Estimate the number of teachers required at the benchmark.
+    df["required_teachers"] = (
+        df["learners"]
+        / teacher_standard
+    )
 
-    # Positive values represent an estimated teacher shortfall.
+    # Estimate the additional number of teachers needed.
+    # Negative gaps are set to zero because they do not represent shortages.
     df["teacher_gap"] = (
-        df["required_teachers"] - df["teachers"]
+        df["required_teachers"]
+        - df["teachers"]
     ).clip(lower=0)
 
-    # Preserve unusually high values but flag them for review.
+    # Flag unusually high learner-teacher ratios without deleting them.
     df["extreme_teacher_ratio"] = (
         df["source_learner_teacher_ratio"] > 100
     )
 
-    # Flag material disagreement between our calculated ratio and the source ratio.
+    # Flag material disagreement between calculated and source ratios.
     df["teacher_ratio_mismatch"] = (
         df["teacher_ratio_difference"] > 5
     )
@@ -115,20 +133,22 @@ def add_classroom_metrics(df):
     """Calculate classroom-pressure metrics from the DNEMIS source ratio."""
     df = df.copy()
 
-    # UBE learner-classroom benchmark from DNEMIS constants.parquet.
+    # DNEMIS learner-classroom benchmark.
     classroom_standard = 35.0
 
-    # Values above 1 indicate classroom pressure above the benchmark.
+    # Pressure index compares learners per classroom with the benchmark.
     df["classroom_pressure_index"] = (
-        df["learners_per_classroom"] / classroom_standard
+        df["learners_per_classroom"]
+        / classroom_standard
     )
 
     # Show how far the classroom ratio exceeds the benchmark.
     df["classroom_ratio_gap"] = (
-        df["learners_per_classroom"] - classroom_standard
+        df["learners_per_classroom"]
+        - classroom_standard
     ).clip(lower=0)
 
-    # Preserve extreme observations but flag them for review.
+    # Flag unusually high classroom ratios without removing them.
     df["extreme_classroom_ratio"] = (
         df["learners_per_classroom"] > 100
     )
@@ -139,20 +159,24 @@ def add_priority_flags(df):
     """Create dashboard warning flags for teacher and classroom pressure."""
     df = df.copy()
 
-    # Teacher warning based on the DNEMIS source learner-teacher ratio.
+    # Teacher warning if learner-teacher ratio exceeds the benchmark.
     df["teacher_warning"] = (
         df["source_learner_teacher_ratio"] > 35
     )
 
-    # Classroom warning based on the DNEMIS learners-per-classroom ratio.
+    # Classroom warning if learners per classroom exceeds the benchmark.
     df["classroom_warning"] = (
         df["learners_per_classroom"] > 35
     )
 
-    # Count how many capacity problems affect each record.
+    # Count the number of capacity problems affecting each row.
     df["capacity_warning_count"] = (
-        df["teacher_warning"].fillna(False).astype(int)
-        + df["classroom_warning"].fillna(False).astype(int)
+        df["teacher_warning"]
+        .fillna(False)
+        .astype(int)
+        + df["classroom_warning"]
+        .fillna(False)
+        .astype(int)
     )
 
     return df
@@ -180,8 +204,11 @@ def main():
     print("Adding warning flags...")
     capacity_df = add_priority_flags(capacity_df)
 
-    # Save complete and incomplete rows so source gaps remain visible.
-    capacity_df.to_parquet(OUTPUT_PATH, index=False)
+    # Save complete and incomplete rows so source-data gaps remain visible.
+    capacity_df.to_parquet(
+        OUTPUT_PATH,
+        index=False,
+    )
 
     print(f"Saved analytical table to: {OUTPUT_PATH}")
     print(f"Rows: {len(capacity_df):,}")
@@ -189,19 +216,34 @@ def main():
     print(f"Incomplete rows: {(~capacity_df['is_complete']).sum():,}")
 
     print("\nTeacher warnings:")
-    print(capacity_df["teacher_warning"].value_counts(dropna=False))
+    print(
+        capacity_df["teacher_warning"]
+        .value_counts(dropna=False)
+    )
 
     print("\nClassroom warnings:")
-    print(capacity_df["classroom_warning"].value_counts(dropna=False))
+    print(
+        capacity_df["classroom_warning"]
+        .value_counts(dropna=False)
+    )
 
     print("\nTeacher ratio mismatches:")
-    print(capacity_df["teacher_ratio_mismatch"].value_counts(dropna=False))
+    print(
+        capacity_df["teacher_ratio_mismatch"]
+        .value_counts(dropna=False)
+    )
 
     print("\nExtreme teacher ratios:")
-    print(capacity_df["extreme_teacher_ratio"].value_counts(dropna=False))
+    print(
+        capacity_df["extreme_teacher_ratio"]
+        .value_counts(dropna=False)
+    )
 
     print("\nExtreme classroom ratios:")
-    print(capacity_df["extreme_classroom_ratio"].value_counts(dropna=False))
+    print(
+        capacity_df["extreme_classroom_ratio"]
+        .value_counts(dropna=False)
+    )
 
 if __name__ == "__main__":
     main()
