@@ -10,3 +10,5 @@ data/processed/*
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+logs/*.json
+logs/pipeline_runs/*.json
