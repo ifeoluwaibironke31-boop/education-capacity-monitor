@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -10,10 +11,6 @@ import plotly.graph_objects as go
 import streamlit as st
 from sqlalchemy import create_engine
 
-# =========================================================
-# PAGE CONFIGURATION
-# =========================================================
-
 st.set_page_config(
     page_title="Nigerian Education Capacity Monitor",
     page_icon="🇳🇬",
@@ -21,414 +18,86 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# =========================================================
-# MAP INTERACTION CONFIGURATION
-# =========================================================
-
-# Mouse-wheel / trackpad scrolling will NOT zoom the map.
-# The visible + and - controls are used for zooming instead.
 MAP_CONFIG = {
     "scrollZoom": False,
     "displayModeBar": True,
     "displaylogo": False,
-    "modeBarButtonsToRemove": [
-        "toImage",
-        "resetViewMap",
-    ],
+    "modeBarButtonsToRemove": ["toImage", "resetViewMap"],
 }
 
 # =========================================================
-# DARK DASHBOARD THEME
+# STYLE
 # =========================================================
 
 st.markdown(
     """
-    <style>
-    :root {
-        --background: #070d16;
-        --sidebar: #09111d;
-        --surface: #0f1826;
-        --surface-2: #121d2d;
-        --surface-3: #182337;
-        --border: #223047;
-        --text: #f3f6fb;
-        --muted: #8f9db2;
-    }
-
-    html,
-    body,
-    [data-testid="stAppViewContainer"],
-    .stApp {
-        background: var(--background);
-        color: var(--text);
-    }
-
-    [data-testid="stHeader"] {
-        background: #070d16;
-        border-bottom: 1px solid #172232;
-    }
-
-    [data-testid="stToolbar"] {
-        color: #dbe5f3;
-    }
-
-    .block-container {
-        max-width: 1500px;
-        padding-top: 4.2rem !important;
-        padding-bottom: 2rem;
-        padding-left: 2.3rem;
-        padding-right: 2.3rem;
-    }
-
-    /* -----------------------------------------------------
-       SIDEBAR
-    ----------------------------------------------------- */
-
-    section[data-testid="stSidebar"] {
-        background: var(--sidebar);
-        border-right: 1px solid var(--border);
-    }
-
-    section[data-testid="stSidebar"] > div {
-        background: var(--sidebar);
-    }
-
-    [data-testid="stSidebar"] * {
-        color: #e7edf7;
-    }
-
-    [data-testid="stSidebar"] hr {
-        border-color: #243349;
-    }
-
-    .sidebar-brand {
-        padding: 22px 4px 18px 4px;
-    }
-
-    .sidebar-brand-title {
-        font-size: 1.35rem;
-        line-height: 1.3;
-        font-weight: 800;
-        color: #ffffff;
-        margin-bottom: 10px;
-        max-width: 290px;
-    }
-
-    .sidebar-brand-subtitle {
-        color: #8a98ad;
-        font-size: 0.82rem;
-        line-height: 1.55;
-        max-width: 300px;
-    }
-
-    .sidebar-section {
-        color: #6f8098;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        font-weight: 800;
-        font-size: 0.68rem;
-        margin-top: 21px;
-        margin-bottom: 9px;
-    }
-
-    section[data-testid="stSidebar"] .stButton button {
-        width: 100%;
-        min-height: 42px;
-        border-radius: 9px;
-        background: #101a2a;
-        border: 1px solid #25354b;
-        color: #e7edf7;
-        font-weight: 600;
-        text-align: left;
-        justify-content: flex-start;
-        padding-left: 14px;
-    }
-
-    section[data-testid="stSidebar"] .stButton button:hover {
-        background: #162238;
-        border-color: #3a506f;
-        color: white;
-    }
-
-    section[data-testid="stSidebar"] .stButton button p {
-        color: inherit !important;
-    }
-
-    /* -----------------------------------------------------
-       COMPACT RISK CHECKBOXES
-    ----------------------------------------------------- */
-
-    section[data-testid="stSidebar"] [data-testid="stCheckbox"] {
-        margin-top: -5px;
-        margin-bottom: -5px;
-    }
-
-    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label {
-        padding-top: 1px;
-        padding-bottom: 1px;
-    }
-
-    section[data-testid="stSidebar"] [data-testid="stCheckbox"] p {
-        color: #e0e7f1 !important;
-        font-size: 0.9rem;
-        font-weight: 500;
-    }
-
-    /* -----------------------------------------------------
-       HEADINGS
-    ----------------------------------------------------- */
-
-    h1,
-    h2,
-    h3,
-    h4 {
-        color: #f5f7fb !important;
-    }
-
-    p {
-        color: #a6b1c2;
-    }
-
-    .dashboard-title {
-        color: #f5f7fb;
-        font-size: 2rem;
-        font-weight: 800;
-        line-height: 1.25;
-        margin: 0 0 6px 0;
-        padding: 0;
-    }
-
-    .dashboard-subtitle {
-        color: #8391a6;
-        font-size: 0.97rem;
-        margin-bottom: 24px;
-    }
-
-    .section-label {
-        color: #7788a0;
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        font-size: 0.72rem;
-        font-weight: 800;
-        margin-top: 21px;
-        margin-bottom: 7px;
-    }
-
-    /* -----------------------------------------------------
-       KPI CARDS
-    ----------------------------------------------------- */
-
-    [data-testid="stMetric"] {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 16px 18px;
-        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.15);
-    }
-
-    [data-testid="stMetricLabel"] {
-        color: #8594aa;
-    }
-
-    [data-testid="stMetricLabel"] p {
-        color: #8594aa !important;
-        font-weight: 600;
-    }
-
-    [data-testid="stMetricValue"] {
-        color: #f1f5fb;
-        font-weight: 800;
-    }
-
-    /* -----------------------------------------------------
-       PLOTLY
-    ----------------------------------------------------- */
-
-    [data-testid="stPlotlyChart"] {
-        background: transparent !important;
-        border: none !important;
-        border-radius: 0 !important;
-        overflow: visible !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-    }
-
-    /* Make Plotly modebar controls fit dark dashboard. */
-    .modebar {
-        background: rgba(9, 17, 29, 0.88) !important;
-        border-radius: 9px !important;
-        padding: 3px !important;
-    }
-
-    .modebar-btn path {
-        fill: #dce5f2 !important;
-    }
-
-    .modebar-btn:hover path {
-        fill: #ffffff !important;
-    }
-
-    /* -----------------------------------------------------
-       EXPANDER
-    ----------------------------------------------------- */
-
-    [data-testid="stExpander"] {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-    }
-
-    [data-testid="stExpander"] summary {
-        color: #d8e0ec;
-    }
-
-    /* -----------------------------------------------------
-       INFO CARD
-    ----------------------------------------------------- */
-
-    .info-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 18px 20px;
-        color: #cfd8e6;
-        margin-bottom: 15px;
-    }
-
-    .info-card strong {
-        color: white;
-    }
-
-    /* -----------------------------------------------------
-       BADGES
-    ----------------------------------------------------- */
-
-    .badge-row {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        flex-wrap: wrap;
-        margin-top: 5px;
-        margin-bottom: 12px;
-    }
-
-    .dashboard-badge {
-        color: white;
-        border-radius: 999px;
-        padding: 7px 14px;
-        font-size: 0.82rem;
-        font-weight: 750;
-        display: inline-block;
-    }
-
-    /* -----------------------------------------------------
-       SIDEBAR RANKING
-    ----------------------------------------------------- */
-
-    .sidebar-risk-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-        padding: 8px 2px;
-        border-bottom: 1px solid #1d2a3d;
-        color: #cdd7e5;
-        font-size: 0.82rem;
-    }
-
-    .sidebar-risk-score {
-        color: white;
-        font-weight: 750;
-    }
-
-    /* -----------------------------------------------------
-       BLENDED TABLE
-    ----------------------------------------------------- */
-
-    .table-shell {
-        width: 100%;
-        overflow-x: auto;
-        margin-top: 6px;
-        padding: 0;
-        background: transparent;
-        border: none;
-    }
-
-    .blend-table {
-        width: 100%;
-        border-collapse: collapse;
-        color: #dbe4f2;
-        font-size: 0.76rem;
-        line-height: 1.35;
-        table-layout: auto;
-    }
-
-    .blend-table thead th {
-        color: #94a4bc;
-        font-weight: 700;
-        text-align: left;
-        padding: 9px 10px;
-        border-bottom: 1px solid #263348;
-        white-space: nowrap;
-        background: transparent;
-    }
-
-    .blend-table tbody td {
-        padding: 9px 10px;
-        border-bottom: 1px solid #192536;
-        white-space: nowrap;
-        background: transparent;
-    }
-
-    .blend-table tbody tr:hover td {
-        background: rgba(255, 255, 255, 0.03);
-    }
-
-    [data-testid="stCaptionContainer"] p {
-        color: #78869a !important;
-    }
-
-    footer {
-        background: var(--background);
-    }
-    </style>
-    """,
+<style>
+:root{--background:#070d16;--sidebar:#09111d;--surface:#0f1826;--border:#223047;--text:#f3f6fb}
+html,body,[data-testid="stAppViewContainer"],.stApp{background:var(--background);color:var(--text)}
+[data-testid="stHeader"]{background:#070d16;border-bottom:1px solid #172232}
+[data-testid="stToolbar"]{color:#dbe5f3}
+.block-container{max-width:1500px;padding:4.2rem 2.3rem 2rem!important}
+section[data-testid="stSidebar"],section[data-testid="stSidebar"]>div{background:var(--sidebar)}
+section[data-testid="stSidebar"]{border-right:1px solid var(--border)}
+[data-testid="stSidebar"] *{color:#e7edf7}
+[data-testid="stSidebar"] hr{border-color:#243349}
+.sidebar-brand{padding:22px 4px 18px}
+.sidebar-brand-title{font-size:1.35rem;line-height:1.3;font-weight:800;color:#fff;margin-bottom:10px;max-width:290px}
+.sidebar-brand-subtitle{color:#8a98ad;font-size:.82rem;line-height:1.55;max-width:300px}
+.sidebar-section{color:#6f8098;text-transform:uppercase;letter-spacing:.1em;font-weight:800;font-size:.68rem;margin:21px 0 9px}
+section[data-testid="stSidebar"] .stButton button{width:100%;min-height:42px;border-radius:9px;background:#101a2a;border:1px solid #25354b;color:#e7edf7;font-weight:600;text-align:left;justify-content:flex-start;padding-left:14px}
+section[data-testid="stSidebar"] .stButton button:hover{background:#162238;border-color:#3a506f;color:#fff}
+section[data-testid="stSidebar"] .stButton button p{color:inherit!important}
+section[data-testid="stSidebar"] [data-testid="stCheckbox"]{margin:-5px 0}
+section[data-testid="stSidebar"] [data-testid="stCheckbox"] label{padding:1px 0}
+section[data-testid="stSidebar"] [data-testid="stCheckbox"] p{color:#e0e7f1!important;font-size:.9rem;font-weight:500}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:#101a2a;border-color:#25354b}
+h1,h2,h3,h4{color:#f5f7fb!important}
+p{color:#a6b1c2}
+.dashboard-title{color:#f5f7fb;font-size:2rem;font-weight:800;line-height:1.25;margin:0 0 6px}
+.dashboard-subtitle{color:#8391a6;font-size:.97rem;margin-bottom:24px}
+.section-label{color:#7788a0;text-transform:uppercase;letter-spacing:.09em;font-size:.72rem;font-weight:800;margin:21px 0 7px}
+[data-testid="stMetric"]{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 8px 22px rgba(0,0,0,.15)}
+[data-testid="stMetricLabel"],[data-testid="stMetricLabel"] p{color:#8594aa!important;font-weight:600}
+[data-testid="stMetricValue"]{color:#f1f5fb;font-weight:800}
+[data-testid="stPlotlyChart"]{background:transparent!important;border:none!important;border-radius:0!important;overflow:visible!important;box-shadow:none!important;padding:0!important}
+.modebar{background:rgba(9,17,29,.88)!important;border-radius:9px!important;padding:3px!important}
+.modebar-btn path{fill:#dce5f2!important}
+.modebar-btn:hover path{fill:#fff!important}
+[data-testid="stExpander"]{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+[data-testid="stExpander"] summary{color:#d8e0ec}
+.info-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;color:#cfd8e6;margin-bottom:15px}
+.info-card strong{color:#fff}
+.badge-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:5px 0 12px}
+.dashboard-badge{color:#fff;border-radius:999px;padding:7px 14px;font-size:.82rem;font-weight:750;display:inline-block}
+.sidebar-risk-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px solid #1d2a3d;color:#cdd7e5;font-size:.82rem}
+.sidebar-risk-score{color:#fff;font-weight:750}
+.table-shell{width:100%;overflow-x:auto;margin-top:6px}
+.blend-table{width:100%;border-collapse:collapse;color:#dbe4f2;font-size:.76rem;line-height:1.35}
+.blend-table thead th{color:#94a4bc;font-weight:700;text-align:left;padding:9px 10px;border-bottom:1px solid #263348;white-space:nowrap}
+.blend-table tbody td{padding:9px 10px;border-bottom:1px solid #192536;white-space:nowrap}
+.blend-table tbody tr:hover td{background:rgba(255,255,255,.03)}
+[data-testid="stCaptionContainer"] p{color:#78869a!important}
+footer{background:var(--background)}
+</style>
+""",
     unsafe_allow_html=True,
 )
 
 # =========================================================
-# PATHS
+# PATHS + CONFIGURATION
 # =========================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-STATE_GEOJSON_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "reference"
-    / "nigeria_states.geojson"
-)
-
-LGA_GEOJSON_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "reference"
-    / "nigeria_lgas_enriched.geojson"
-)
-
-# =========================================================
-# DATABASE SETTINGS
-# =========================================================
+STATE_GEOJSON_PATH = PROJECT_ROOT / "data" / "reference" / "nigeria_states.geojson"
+LGA_GEOJSON_PATH = PROJECT_ROOT / "data" / "reference" / "nigeria_lgas_enriched.geojson"
+LATEST_RUN_PATH = PROJECT_ROOT / "logs" / "latest_pipeline_run.json"
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "education_capacity")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-
-# =========================================================
-# RISK COLORS
-# =========================================================
 
 RISK_COLORS = [
     [0.00, "#2E8B57"],
@@ -437,10 +106,6 @@ RISK_COLORS = [
     [0.75, "#E77A35"],
     [1.00, "#C92B2B"],
 ]
-
-# =========================================================
-# NAME NORMALIZATION
-# =========================================================
 
 STATE_ALIASES = {
     "akwa ibom": "akwa ibom",
@@ -453,10 +118,7 @@ STATE_ALIASES = {
 
 LGA_ALIASES = {
     ("abia", "umu nneochi"): "umunneochi",
-    (
-        "federal capital territory",
-        "municipal area council",
-    ): "abuja municipal area council",
+    ("federal capital territory", "municipal area council"): "abuja municipal area council",
     ("bayelsa", "yenegoa"): "yenagoa",
     ("benue", "oturkpo"): "otukpo",
     ("edo", "iguegben"): "igueben",
@@ -466,16 +128,15 @@ LGA_ALIASES = {
     ("imo", "mbatoli"): "mbaitoli",
     ("jigawa", "biriniwa"): "birniwa",
     ("jigawa", "kiri kasama"): "kiri kasamma",
-    ("kano", "garun malam"): "garun mallam",
-    ("kano", "nassarawa"): "nasarawa",
-    ("kebbi", "bagudu"): "bagudo",
-    ("niger", "muya"): "munya",
-    ("nasarawa", "nasarawa eggon"): "nasarawa egon",
     ("kano", "danbatta"): "dambatta",
     ("kano", "garun malam"): "garun mallam",
     ("kano", "garum mallam"): "garun mallam",
+    ("kano", "nassarawa"): "nasarawa",
+    ("kebbi", "bagudu"): "bagudo",
     ("kebbi", "arewa"): "arewa dandi",
     ("kebbi", "danko wasagu"): "wasagu danko",
+    ("nasarawa", "nasarawa eggon"): "nasarawa egon",
+    ("niger", "muya"): "munya",
     ("ogun", "shagamu"): "sagamu",
     ("osun", "atakunmosa east"): "atakumosa east",
     ("osun", "atakunmosa west"): "atakumosa west",
@@ -487,171 +148,121 @@ LGA_ALIASES = {
     ("zamfara", "birnin magaji kiyaw"): "birnin magaji",
 }
 
+# =========================================================
+# PIPELINE STATUS
+# =========================================================
+
+def load_pipeline_status():
+    if not LATEST_RUN_PATH.exists():
+        return None
+
+    try:
+        with open(LATEST_RUN_PATH, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def format_pipeline_time(value):
+    if not value:
+        return "Timestamp unavailable"
+
+    try:
+        return datetime.fromisoformat(value).strftime("%d %b %Y · %H:%M")
+    except ValueError:
+        return value
+
+# =========================================================
+# GEOGRAPHY
+# =========================================================
 
 def normalize_name(value):
-    """Normalize geographic names for matching."""
     if pd.isna(value):
         return value
 
     value = str(value).strip().lower()
     value = re.sub(r"[-/]", " ", value)
     value = re.sub(r"[.'’]", "", value)
-    value = re.sub(r"\s+", " ", value).strip()
-
-    return value
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def normalize_state(value):
-    """Normalize state names."""
     normalized = normalize_name(value)
-
-    return STATE_ALIASES.get(
-        normalized,
-        normalized,
-    )
+    return STATE_ALIASES.get(normalized, normalized)
 
 
 def normalize_lga(state_value, lga_value):
-    """Normalize LGA names and apply verified aliases."""
-    state_key = normalize_state(
-        state_value
-    )
-
-    lga_key = normalize_name(
-        lga_value
-    )
-
-    return LGA_ALIASES.get(
-        (
-            state_key,
-            lga_key,
-        ),
-        lga_key,
-    )
+    state_key = normalize_state(state_value)
+    lga_key = normalize_name(lga_value)
+    return LGA_ALIASES.get((state_key, lga_key), lga_key)
 
 # =========================================================
-# DATABASE
+# DATABASE + FILES
 # =========================================================
 
 @st.cache_resource
 def create_db_engine():
-    """Create and cache PostgreSQL connection."""
     if not DB_PASSWORD:
-        st.error(
-            "DB_PASSWORD is not set. "
-            "Set it before starting Streamlit."
-        )
+        st.error("DB_PASSWORD is not set. Set it before starting Streamlit.")
         st.stop()
 
-    connection_url = (
+    url = (
         f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
-
-    return create_engine(
-        connection_url
-    )
+    return create_engine(url)
 
 
 @st.cache_data
 def load_capacity_data():
-    """Load complete analytical records."""
     query = """
         SELECT *
         FROM capacity_metrics
         WHERE is_complete = TRUE
     """
+    return pd.read_sql(query, create_db_engine())
 
-    return pd.read_sql(
-        query,
-        create_db_engine(),
-    )
-
-# =========================================================
-# GEOJSON
-# =========================================================
 
 @st.cache_data
 def load_state_geojson():
-    """Load state polygons."""
-    with open(
-        STATE_GEOJSON_PATH,
-        "r",
-        encoding="utf-8",
-    ) as file:
-        return json.load(
-            file
-        )
+    with open(STATE_GEOJSON_PATH, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
 @st.cache_data
 def load_lga_geojson():
-    """Load enriched LGA polygons."""
-    with open(
-        LGA_GEOJSON_PATH,
-        "r",
-        encoding="utf-8",
-    ) as file:
-        return json.load(
-            file
-        )
+    with open(LGA_GEOJSON_PATH, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
-def build_lga_reference(
-    lga_geojson,
-):
-    """Create official state/LGA reference."""
+def build_lga_reference(lga_geojson):
     rows = []
 
-    for feature in lga_geojson[
-        "features"
-    ]:
+    for feature in lga_geojson["features"]:
+        props = feature["properties"]
+        rows.append({"state": props["state"], "lga": props["lga"]})
 
-        props = feature[
-            "properties"
-        ]
-
-        rows.append(
-            {
-                "state": props[
-                    "state"
-                ],
-                "lga": props[
-                    "lga"
-                ],
-            }
-        )
-
-    return pd.DataFrame(
-        rows
-    )
+    return pd.DataFrame(rows)
 
 # =========================================================
 # RISK + CONFIDENCE
 # =========================================================
 
 def classify_pressure(value):
-    """Convert pressure index to severity."""
     if pd.isna(value):
         return "No Data"
-
     if value <= 1:
         return "Normal"
-
     if value <= 1.5:
         return "Moderate"
-
     if value <= 2:
         return "High"
-
     if value <= 3:
         return "Severe"
-
     return "Critical"
 
 
 def severity_color(severity):
-    """Color used for severity badges."""
     colors = {
         "Normal": "#2E8B57",
         "Moderate": "#B89D24",
@@ -660,643 +271,268 @@ def severity_color(severity):
         "Critical": "#9E2020",
         "No Data": "#586577",
     }
-
-    return colors.get(
-        severity,
-        "#586577",
-    )
+    return colors.get(severity, "#586577")
 
 
-def classify_data_confidence(
-    coverage_pct,
-):
-    """
-    Data confidence is based only on geographic coverage.
-    """
-    if (
-        pd.isna(
-            coverage_pct
-        )
-        or coverage_pct <= 0
-    ):
+def classify_data_confidence(coverage_pct):
+    if pd.isna(coverage_pct) or coverage_pct <= 0:
         return "No Data"
-
     if coverage_pct >= 80:
         return "High"
-
     if coverage_pct >= 50:
         return "Medium"
-
     return "Low"
 
 
-def confidence_color(
-    confidence,
-):
-    """Color used for confidence badge."""
+def confidence_color(confidence):
     colors = {
         "High": "#238A67",
         "Medium": "#B58D25",
         "Low": "#C96E2F",
         "No Data": "#586577",
     }
-
-    return colors.get(
-        confidence,
-        "#586577",
-    )
+    return colors.get(confidence, "#586577")
 
 
-def render_badges(
-    severity,
-    confidence=None,
-):
-    """Render capacity and confidence badges."""
-    risk_color = severity_color(
-        severity
-    )
+def render_badges(severity, confidence=None):
+    color = severity_color(severity)
 
     html = (
         '<div class="badge-row">'
-        f'<span class="dashboard-badge" '
-        f'style="background:{risk_color};">'
-        f'{severity} Capacity Pressure'
-        '</span>'
+        f'<span class="dashboard-badge" style="background:{color};">'
+        f"{severity} Capacity Pressure</span>"
     )
 
     if confidence is not None:
-
-        confidence_badge_color = (
-            confidence_color(
-                confidence
-            )
-        )
-
+        color = confidence_color(confidence)
         html += (
-            f'<span class="dashboard-badge" '
-            f'style="background:{confidence_badge_color};">'
-            f'{confidence} Data Confidence'
-            '</span>'
+            f'<span class="dashboard-badge" style="background:{color};">'
+            f"{confidence} Data Confidence</span>"
         )
 
-    html += "</div>"
-
-    st.markdown(
-        html,
-        unsafe_allow_html=True,
-    )
+    st.markdown(html + "</div>", unsafe_allow_html=True)
 
 # =========================================================
-# PREPARE DATA
+# DATA PREPARATION
 # =========================================================
 
 def prepare_capacity_data(df):
-    """Create normalized geography keys."""
     df = df.copy()
-
-    df["state_key"] = (
-        df["state"]
-        .apply(
-            normalize_state
-        )
+    df["state_key"] = df["state"].apply(normalize_state)
+    df["lga_key"] = df.apply(
+        lambda row: normalize_lga(row["state"], row["lga"]),
+        axis=1,
     )
-
-    df["lga_key"] = (
-        df.apply(
-            lambda row: normalize_lga(
-                row["state"],
-                row["lga"],
-            ),
-            axis=1,
-        )
-    )
-
     return df
 
-# =========================================================
-# STATE SUMMARY
-# =========================================================
 
-def build_state_summary(
-    capacity_df,
-    lga_reference,
-):
-    """
-    Create state-level risk and geographic coverage.
-
-    Coverage is the percentage of official GeoJSON LGAs
-    that successfully match an LGA with complete DNEMIS data.
-    """
+def build_state_summary(capacity_df, lga_reference):
     df = capacity_df.copy()
     ref = lga_reference.copy()
 
-    # Normalize official state names.
-    ref["state_key"] = (
-        ref["state"]
-        .apply(
-            normalize_state
-        )
+    ref["state_key"] = ref["state"].apply(normalize_state)
+    ref["lga_key"] = ref.apply(
+        lambda row: normalize_lga(row["state"], row["lga"]),
+        axis=1,
     )
 
-    # Normalize official LGA names using the same aliases
-    # used for DNEMIS.
-    ref["lga_key"] = (
-        ref.apply(
-            lambda row: normalize_lga(
-                row["state"],
-                row["lga"],
-            ),
-            axis=1,
-        )
-    )
+    official_lgas = ref[["state_key", "lga_key"]].drop_duplicates()
+    data_lgas = df[["state_key", "lga_key"]].drop_duplicates()
 
-    # Official LGA geography.
-    official_lgas = (
-        ref[
-            [
-                "state_key",
-                "lga_key",
-            ]
-        ]
-        .drop_duplicates()
-    )
-
-    # LGAs represented in complete analytical data.
-    data_lgas = (
-        df[
-            [
-                "state_key",
-                "lga_key",
-            ]
-        ]
-        .drop_duplicates()
-    )
-
-    # Only matching official LGAs count toward coverage.
-    matched_lgas = (
-        official_lgas
-        .merge(
-            data_lgas,
-            on=[
-                "state_key",
-                "lga_key",
-            ],
-            how="inner",
-        )
+    matched_lgas = official_lgas.merge(
+        data_lgas,
+        on=["state_key", "lga_key"],
+        how="inner",
     )
 
     total_lgas = (
-        official_lgas
-        .groupby(
-            "state_key"
-        )["lga_key"]
+        official_lgas.groupby("state_key")["lga_key"]
         .nunique()
-        .rename(
-            "total_lgas"
-        )
+        .rename("total_lgas")
     )
 
     analysed_lgas = (
-        matched_lgas
-        .groupby(
-            "state_key"
-        )["lga_key"]
+        matched_lgas.groupby("state_key")["lga_key"]
         .nunique()
-        .rename(
-            "analysed_lgas"
-        )
+        .rename("analysed_lgas")
     )
 
-    state_metrics = (
-        df
-        .groupby(
-            "state_key"
-        )
-        .agg(
-            teacher_pressure=(
-                "teacher_pressure_index",
-                lambda x: x.quantile(
-                    0.75
-                ),
-            ),
-            classroom_pressure=(
-                "classroom_pressure_index",
-                lambda x: x.quantile(
-                    0.75
-                ),
-            ),
-            teacher_warnings=(
-                "teacher_warning",
-                "sum",
-            ),
-            classroom_warnings=(
-                "classroom_warning",
-                "sum",
-            ),
-            record_count=(
-                "lga",
-                "size",
-            ),
-        )
+    state_metrics = df.groupby("state_key").agg(
+        teacher_pressure=(
+            "teacher_pressure_index",
+            lambda x: x.quantile(0.75),
+        ),
+        classroom_pressure=(
+            "classroom_pressure_index",
+            lambda x: x.quantile(0.75),
+        ),
+        teacher_warnings=("teacher_warning", "sum"),
+        classroom_warnings=("classroom_warning", "sum"),
+        record_count=("lga", "size"),
     )
 
-    summary = (
-        pd.concat(
-            [
-                state_metrics,
-                total_lgas,
-                analysed_lgas,
-            ],
-            axis=1,
-        )
-        .reset_index()
-    )
+    summary = pd.concat(
+        [state_metrics, total_lgas, analysed_lgas],
+        axis=1,
+    ).reset_index()
 
-    summary[
-        "analysed_lgas"
-    ] = (
-        summary[
-            "analysed_lgas"
-        ]
-        .fillna(0)
-        .astype(int)
-    )
+    summary["analysed_lgas"] = summary["analysed_lgas"].fillna(0).astype(int)
+    summary["total_lgas"] = summary["total_lgas"].fillna(0).astype(int)
 
-    summary[
-        "total_lgas"
-    ] = (
-        summary[
-            "total_lgas"
-        ]
-        .fillna(0)
-        .astype(int)
-    )
-
-    summary[
-        "coverage_pct"
-    ] = (
-        summary[
-            "analysed_lgas"
-        ]
-        / summary[
-            "total_lgas"
-        ].replace(
-            0,
-            pd.NA,
-        )
+    summary["coverage_pct"] = (
+        summary["analysed_lgas"]
+        / summary["total_lgas"].replace(0, pd.NA)
         * 100
+    ).fillna(0)
+
+    summary["data_confidence"] = summary["coverage_pct"].apply(
+        classify_data_confidence
     )
 
-    summary[
-        "coverage_pct"
-    ] = (
-        summary[
-            "coverage_pct"
-        ]
-        .fillna(0)
-    )
-
-    summary[
-        "data_confidence"
-    ] = (
-        summary[
-            "coverage_pct"
-        ]
-        .apply(
-            classify_data_confidence
-        )
-    )
-
-    summary[
-        "overall_pressure"
-    ] = (
-        summary[
-            [
-                "teacher_pressure",
-                "classroom_pressure",
-            ]
-        ]
-        .max(
-            axis=1
-        )
-    )
+    summary["overall_pressure"] = summary[
+        ["teacher_pressure", "classroom_pressure"]
+    ].max(axis=1)
 
     return summary
 
-# =========================================================
-# STATE MAP DATA
-# =========================================================
 
-def build_state_map_dataframe(
-    state_geojson,
-    state_summary,
-):
-    """Match state analytics to official state polygons."""
+def build_state_map_dataframe(state_geojson, state_summary):
     rows = []
 
-    for feature in state_geojson[
-        "features"
-    ]:
-
-        state_name = (
-            feature[
-                "properties"
-            ][
-                "shapeName"
-            ]
-        )
+    for feature in state_geojson["features"]:
+        state_name = feature["properties"]["shapeName"]
 
         rows.append(
             {
                 "state_name": state_name,
-                "state_key": normalize_state(
-                    state_name
-                ),
+                "state_key": normalize_state(state_name),
             }
         )
 
-    map_df = pd.DataFrame(
-        rows
+    map_df = pd.DataFrame(rows).merge(
+        state_summary,
+        on="state_key",
+        how="left",
     )
 
-    map_df = (
-        map_df
-        .merge(
-            state_summary,
-            on="state_key",
-            how="left",
-        )
+    map_df["coverage_pct"] = map_df["coverage_pct"].fillna(0)
+    map_df["analysed_lgas"] = map_df["analysed_lgas"].fillna(0).astype(int)
+    map_df["total_lgas"] = map_df["total_lgas"].fillna(0).astype(int)
+    map_df["data_confidence"] = map_df["coverage_pct"].apply(
+        classify_data_confidence
     )
-
-    map_df[
-        "coverage_pct"
-    ] = (
-        map_df[
-            "coverage_pct"
-        ]
-        .fillna(0)
-    )
-
-    map_df[
-        "analysed_lgas"
-    ] = (
-        map_df[
-            "analysed_lgas"
-        ]
-        .fillna(0)
-        .astype(int)
-    )
-
-    map_df[
-        "total_lgas"
-    ] = (
-        map_df[
-            "total_lgas"
-        ]
-        .fillna(0)
-        .astype(int)
-    )
-
-    map_df[
-        "data_confidence"
-    ] = (
-        map_df[
-            "coverage_pct"
-        ]
-        .apply(
-            classify_data_confidence
-        )
-    )
-
-    map_df[
-        "has_data"
-    ] = (
-        map_df[
-            "record_count"
-        ]
-        .notna()
-    )
+    map_df["has_data"] = map_df["record_count"].notna()
 
     return map_df
 
-# =========================================================
-# LGA SUMMARY
-# =========================================================
 
-def build_lga_summary(
-    capacity_df,
-    selected_state,
-):
-    """Aggregate analytical records to LGA level."""
-    state_key = normalize_state(
-        selected_state
-    )
+def build_lga_summary(capacity_df, selected_state):
+    state_key = normalize_state(selected_state)
 
-    state_data = (
-        capacity_df[
-            capacity_df[
-                "state_key"
-            ]
-            == state_key
-        ]
-        .copy()
-    )
+    state_data = capacity_df[
+        capacity_df["state_key"] == state_key
+    ].copy()
 
     if state_data.empty:
         return pd.DataFrame()
 
     summary = (
-        state_data
-        .groupby(
-            "lga_key"
-        )
+        state_data.groupby("lga_key")
         .agg(
-            dnemis_lga=(
-                "lga",
-                "first",
-            ),
+            dnemis_lga=("lga", "first"),
             teacher_pressure=(
                 "teacher_pressure_index",
-                lambda x: x.quantile(
-                    0.75
-                ),
+                lambda x: x.quantile(0.75),
             ),
             classroom_pressure=(
                 "classroom_pressure_index",
-                lambda x: x.quantile(
-                    0.75
-                ),
+                lambda x: x.quantile(0.75),
             ),
-            teacher_warnings=(
-                "teacher_warning",
-                "sum",
-            ),
-            classroom_warnings=(
-                "classroom_warning",
-                "sum",
-            ),
-            record_count=(
-                "lga",
-                "size",
-            ),
+            teacher_warnings=("teacher_warning", "sum"),
+            classroom_warnings=("classroom_warning", "sum"),
+            record_count=("lga", "size"),
         )
         .reset_index()
     )
 
-    summary[
-        "overall_pressure"
-    ] = (
-        summary[
-            [
-                "teacher_pressure",
-                "classroom_pressure",
-            ]
-        ]
-        .max(
-            axis=1
-        )
-    )
+    summary["overall_pressure"] = summary[
+        ["teacher_pressure", "classroom_pressure"]
+    ].max(axis=1)
 
     return summary
 
-# =========================================================
-# LGA GEOJSON
-# =========================================================
 
-def get_state_lga_geojson(
-    lga_geojson,
-    selected_state,
-):
-    """Keep LGA polygons belonging to selected state."""
-    selected_state_key = (
-        normalize_state(
-            selected_state
-        )
-    )
-
+def get_state_lga_geojson(lga_geojson, selected_state):
+    selected_state_key = normalize_state(selected_state)
     features = []
 
-    for feature in lga_geojson[
-        "features"
-    ]:
+    for feature in lga_geojson["features"]:
+        props = feature["properties"]
 
-        props = feature[
-            "properties"
-        ]
+        if normalize_state(props["state"]) == selected_state_key:
+            features.append(copy.deepcopy(feature))
 
-        if (
-            normalize_state(
-                props[
-                    "state"
-                ]
-            )
-            == selected_state_key
-        ):
-            features.append(
-                copy.deepcopy(
-                    feature
-                )
-            )
-
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-    }
+    return {"type": "FeatureCollection", "features": features}
 
 
-def build_lga_map_dataframe(
-    state_lga_geojson,
-    lga_summary,
-):
-    """Match LGA analytics to LGA polygons."""
+def build_lga_map_dataframe(state_lga_geojson, lga_summary):
     rows = []
 
-    for feature in state_lga_geojson[
-        "features"
-    ]:
-
-        props = feature[
-            "properties"
-        ]
+    for feature in state_lga_geojson["features"]:
+        props = feature["properties"]
 
         rows.append(
             {
-                "lga_geo_name": props[
-                    "lga"
-                ],
-                "lga_key": normalize_lga(
-                    props[
-                        "state"
-                    ],
-                    props[
-                        "lga"
-                    ],
-                ),
+                "lga_geo_name": props["lga"],
+                "lga_key": normalize_lga(props["state"], props["lga"]),
             }
         )
 
-    map_df = pd.DataFrame(
-        rows
+    map_df = pd.DataFrame(rows).merge(
+        lga_summary,
+        on="lga_key",
+        how="left",
     )
 
-    map_df = (
-        map_df
-        .merge(
-            lga_summary,
-            on="lga_key",
-            how="left",
-        )
-    )
-
-    map_df[
-        "has_data"
-    ] = (
-        map_df[
-            "record_count"
-        ]
-        .notna()
-    )
-
+    map_df["has_data"] = map_df["record_count"].notna()
     return map_df
 
+
+def get_lga_navigation_options(lga_geojson, selected_state):
+    """Return normalized LGA keys and display names for one state."""
+    state_key = normalize_state(selected_state)
+    labels = {}
+
+    for feature in lga_geojson["features"]:
+        props = feature["properties"]
+
+        if normalize_state(props["state"]) == state_key:
+            key = normalize_lga(props["state"], props["lga"])
+            labels[key] = props["lga"]
+
+    options = sorted(labels, key=lambda key: labels[key])
+    return options, labels
+
 # =========================================================
-# SHARED PLOTLY MAP STYLE
+# CHARTS
 # =========================================================
 
-def apply_dark_map_layout(
-    fig,
-    risk_label,
-):
-    """Apply dashboard styling to map figures."""
+def apply_dark_map_layout(fig, risk_label):
     fig.update_layout(
         paper_bgcolor="#0b111b",
         plot_bgcolor="#0b111b",
-        font=dict(
-            color="#d9e2ef",
-        ),
-        margin=dict(
-            l=0,
-            r=0,
-            t=0,
-            b=0,
-        ),
+        font=dict(color="#d9e2ef"),
+        margin=dict(l=0, r=0, t=0, b=0),
         hoverlabel=dict(
-            bgcolor="rgba(14, 22, 35, 0.97)",
+            bgcolor="rgba(14,22,35,0.97)",
             bordercolor="rgba(255,255,255,0.15)",
-            font=dict(
-                color="#ffffff",
-                size=13,
-                family="Arial",
-            ),
+            font=dict(color="#fff", size=13, family="Arial"),
             align="left",
         ),
         coloraxis_colorbar=dict(
             title=dict(
                 text=risk_label,
-                font=dict(
-                    color="#dce5f2",
-                    size=12,
-                ),
+                font=dict(color="#dce5f2", size=12),
             ),
             x=0.985,
             xanchor="right",
@@ -1305,46 +541,22 @@ def apply_dark_map_layout(
             thickness=12,
             bgcolor="rgba(10,16,26,0.72)",
             outlinewidth=0,
-            tickfont=dict(
-                color="#dce5f2",
-                size=11,
-            ),
+            tickfont=dict(color="#dce5f2", size=11),
         ),
-        map=dict(
-            domain=dict(
-                x=[
-                    0,
-                    1,
-                ],
-                y=[
-                    0,
-                    1,
-                ],
-            )
-        ),
+        map=dict(domain=dict(x=[0, 1], y=[0, 1])),
     )
 
     return fig
 
-# =========================================================
-# DETAIL PRESSURE CHART
-# =========================================================
 
-def create_detail_pressure_chart(
-    education_summary,
-):
-    """Create transparent detail chart for LGA profile."""
+def create_detail_pressure_chart(education_summary):
     fig = go.Figure()
 
     fig.add_trace(
         go.Bar(
             name="Teacher Pressure",
-            x=education_summary[
-                "education_level"
-            ],
-            y=education_summary[
-                "Teacher Pressure"
-            ],
+            x=education_summary["education_level"],
+            y=education_summary["Teacher Pressure"],
             marker_color="#78B4E8",
             hovertemplate=(
                 "<b>%{x}</b><br>"
@@ -1357,12 +569,8 @@ def create_detail_pressure_chart(
     fig.add_trace(
         go.Bar(
             name="Classroom Pressure",
-            x=education_summary[
-                "education_level"
-            ],
-            y=education_summary[
-                "Classroom Pressure"
-            ],
+            x=education_summary["education_level"],
+            y=education_summary["Classroom Pressure"],
             marker_color="#156FC4",
             hovertemplate=(
                 "<b>%{x}</b><br>"
@@ -1384,16 +592,8 @@ def create_detail_pressure_chart(
         height=320,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(
-            l=10,
-            r=10,
-            t=10,
-            b=10,
-        ),
-        font=dict(
-            color="#dbe5f2",
-            size=12,
-        ),
+        margin=dict(l=10, r=10, t=10, b=10),
+        font=dict(color="#dbe5f2", size=12),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1401,52 +601,33 @@ def create_detail_pressure_chart(
             xanchor="left",
             x=0,
             bgcolor="rgba(0,0,0,0)",
-            font=dict(
-                color="#cfd9e8",
-                size=12,
-            ),
+            font=dict(color="#cfd9e8", size=12),
         ),
         hoverlabel=dict(
             bgcolor="rgba(14,22,35,0.97)",
             bordercolor="rgba(255,255,255,0.15)",
-            font=dict(
-                color="#ffffff",
-                size=12,
-            ),
+            font=dict(color="#fff", size=12),
         ),
         xaxis=dict(
             title=None,
             showgrid=False,
-            tickfont=dict(
-                color="#cdd7e5",
-                size=12,
-            ),
+            tickfont=dict(color="#cdd7e5", size=12),
             zeroline=False,
         ),
         yaxis=dict(
             title="Pressure Index",
             showgrid=True,
             gridcolor="rgba(255,255,255,0.08)",
-            tickfont=dict(
-                color="#cdd7e5",
-                size=12,
-            ),
-            title_font=dict(
-                color="#94a4bc",
-                size=12,
-            ),
+            tickfont=dict(color="#cdd7e5", size=12),
+            title_font=dict(color="#94a4bc", size=12),
             zeroline=False,
         ),
     )
 
     return fig
 
-# =========================================================
-# BLENDED TABLE
-# =========================================================
 
 def render_blended_table(df):
-    """Render detail table directly into dark dashboard."""
     html = df.to_html(
         index=False,
         classes="blend-table",
@@ -1455,37 +636,17 @@ def render_blended_table(df):
     )
 
     st.markdown(
-        (
-            '<div class="table-shell">'
-            f"{html}"
-            "</div>"
-        ),
+        f'<div class="table-shell">{html}</div>',
         unsafe_allow_html=True,
     )
 
-# =========================================================
-# NATIONAL MAP
-# =========================================================
 
-def create_state_map(
-    map_df,
-    state_geojson,
-    risk_column,
-    risk_label,
-):
-    """Create clickable state choropleth."""
+def create_state_map(map_df, state_geojson, risk_column, risk_label):
     display_df = map_df.copy()
 
-    display_df[
-        "severity"
-    ] = (
-        display_df[
-            risk_column
-        ]
-        .apply(
-            classify_pressure
-        )
-    )
+    display_df["severity"] = display_df[
+        risk_column
+    ].apply(classify_pressure)
 
     fig = px.choropleth_map(
         display_df,
@@ -1503,15 +664,9 @@ def create_state_map(
             "total_lgas",
         ],
         color_continuous_scale=RISK_COLORS,
-        range_color=(
-            0,
-            3,
-        ),
+        range_color=(0, 3),
         map_style="carto-darkmatter",
-        center={
-            "lat": 9.0820,
-            "lon": 8.6753,
-        },
+        center={"lat": 9.0820, "lon": 8.6753},
         zoom=4.7,
         opacity=0.86,
         height=650,
@@ -1532,14 +687,8 @@ def create_state_map(
         ),
     )
 
-    return apply_dark_map_layout(
-        fig,
-        risk_label,
-    )
+    return apply_dark_map_layout(fig, risk_label)
 
-# =========================================================
-# LGA MAP
-# =========================================================
 
 def create_lga_map(
     lga_map_df,
@@ -1547,152 +696,58 @@ def create_lga_map(
     risk_column,
     risk_label,
 ):
-    """Create clickable LGA map for selected state."""
     display_df = lga_map_df.copy()
 
-    display_df[
-        "severity"
-    ] = (
-        display_df[
-            risk_column
-        ]
-        .apply(
-            classify_pressure
-        )
-    )
+    display_df["severity"] = display_df[
+        risk_column
+    ].apply(classify_pressure)
 
     coordinates = []
 
     def collect_coordinates(value):
-        """Recursively collect GeoJSON coordinates."""
         if (
-            isinstance(
-                value,
-                list,
-            )
-            and len(
-                value
-            )
-            >= 2
-            and isinstance(
-                value[
-                    0
-                ],
-                (
-                    int,
-                    float,
-                ),
-            )
-            and isinstance(
-                value[
-                    1
-                ],
-                (
-                    int,
-                    float,
-                ),
-            )
+            isinstance(value, list)
+            and len(value) >= 2
+            and isinstance(value[0], (int, float))
+            and isinstance(value[1], (int, float))
         ):
-            coordinates.append(
-                (
-                    value[
-                        0
-                    ],
-                    value[
-                        1
-                    ],
-                )
-            )
+            coordinates.append((value[0], value[1]))
             return
 
-        if isinstance(
-            value,
-            list,
-        ):
+        if isinstance(value, list):
             for item in value:
-                collect_coordinates(
-                    item
-                )
+                collect_coordinates(item)
 
-    for feature in state_lga_geojson[
-        "features"
-    ]:
-
-        collect_coordinates(
-            feature[
-                "geometry"
-            ][
-                "coordinates"
-            ]
-        )
+    for feature in state_lga_geojson["features"]:
+        collect_coordinates(feature["geometry"]["coordinates"])
 
     if coordinates:
+        longitudes = [point[0] for point in coordinates]
+        latitudes = [point[1] for point in coordinates]
 
-        longitudes = [
-            point[
-                0
-            ]
-            for point in coordinates
-        ]
+        min_lon, max_lon = min(longitudes), max(longitudes)
+        min_lat, max_lat = min(latitudes), max(latitudes)
 
-        latitudes = [
-            point[
-                1
-            ]
-            for point in coordinates
-        ]
+        center_lon = (min_lon + max_lon) / 2
+        center_lat = (min_lat + max_lat) / 2
 
-        min_lon = min(
-            longitudes
+        span = max(
+            max_lon - min_lon,
+            max_lat - min_lat,
         )
 
-        max_lon = max(
-            longitudes
-        )
-
-        min_lat = min(
-            latitudes
-        )
-
-        max_lat = max(
-            latitudes
-        )
-
-        center_lon = (
-            min_lon
-            + max_lon
-        ) / 2
-
-        center_lat = (
-            min_lat
-            + max_lat
-        ) / 2
-
-        geographic_span = max(
-            max_lon
-            - min_lon,
-            max_lat
-            - min_lat,
-        )
-
-        if geographic_span < 0.6:
+        if span < 0.6:
             state_zoom = 8.2
-
-        elif geographic_span < 1:
+        elif span < 1:
             state_zoom = 7.7
-
-        elif geographic_span < 1.5:
+        elif span < 1.5:
             state_zoom = 7.2
-
-        elif geographic_span < 2:
+        elif span < 2:
             state_zoom = 6.8
-
-        elif geographic_span < 3:
+        elif span < 3:
             state_zoom = 6.4
-
-        elif geographic_span < 4:
+        elif span < 4:
             state_zoom = 6.0
-
         else:
             state_zoom = 5.7
 
@@ -1715,15 +770,9 @@ def create_lga_map(
             "record_count",
         ],
         color_continuous_scale=RISK_COLORS,
-        range_color=(
-            0,
-            3,
-        ),
+        range_color=(0, 3),
         map_style="carto-darkmatter",
-        center={
-            "lat": center_lat,
-            "lon": center_lon,
-        },
+        center={"lat": center_lat, "lon": center_lon},
         zoom=state_zoom,
         opacity=0.89,
         height=650,
@@ -1742,10 +791,7 @@ def create_lga_map(
         ),
     )
 
-    return apply_dark_map_layout(
-        fig,
-        risk_label,
-    )
+    return apply_dark_map_layout(fig, risk_label)
 
 # =========================================================
 # SESSION STATE
@@ -1761,163 +807,218 @@ if "selected_lga" not in st.session_state:
     st.session_state.selected_lga = None
 
 if "risk_mode" not in st.session_state:
-    st.session_state.risk_mode = (
-        "Overall Capacity Risk"
-    )
+    st.session_state.risk_mode = "Overall Capacity Risk"
 
-# =========================================================
-# RISK CALLBACK
-# =========================================================
+if "jump_state" not in st.session_state:
+    st.session_state.jump_state = None
+
+if "jump_lga" not in st.session_state:
+    st.session_state.jump_lga = None
+
 
 def select_risk_mode(mode):
-    """Switch the active map risk layer."""
-    st.session_state.risk_mode = (
-        mode
+    st.session_state.risk_mode = mode
+
+
+def jump_to_state():
+    """Navigate directly to the selected state."""
+    selected_state = st.session_state.get("jump_state")
+
+    st.session_state.selected_state = selected_state
+    st.session_state.selected_lga = None
+    st.session_state.jump_lga = None
+
+    st.session_state.view_level = (
+        "state" if selected_state else "country"
     )
+
+
+def jump_to_lga():
+    """Navigate directly to the selected LGA."""
+    selected_lga = st.session_state.get("jump_lga")
+
+    if selected_lga:
+        st.session_state.selected_lga = selected_lga
+        st.session_state.view_level = "lga"
 
 # =========================================================
 # LOAD DATA
 # =========================================================
 
-capacity_df = (
-    prepare_capacity_data(
-        load_capacity_data()
+capacity_df = prepare_capacity_data(
+    load_capacity_data()
+)
+
+state_geojson = load_state_geojson()
+lga_geojson = load_lga_geojson()
+
+lga_reference = build_lga_reference(
+    lga_geojson
+)
+
+state_summary = build_state_summary(
+    capacity_df,
+    lga_reference,
+)
+
+state_map_df = build_state_map_dataframe(
+    state_geojson,
+    state_summary,
+)
+
+state_options = sorted(
+    state_map_df["state_name"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+# Keep dropdowns synchronized with map navigation.
+if st.session_state.selected_state in state_options:
+    st.session_state.jump_state = (
+        st.session_state.selected_state
     )
-)
 
-state_geojson = (
-    load_state_geojson()
-)
-
-lga_geojson = (
-    load_lga_geojson()
-)
-
-lga_reference = (
-    build_lga_reference(
-        lga_geojson
-    )
-)
-
-state_summary = (
-    build_state_summary(
-        capacity_df,
-        lga_reference,
-    )
-)
-
-state_map_df = (
-    build_state_map_dataframe(
-        state_geojson,
-        state_summary,
-    )
-)
+if st.session_state.view_level == "country":
+    st.session_state.jump_state = None
+    st.session_state.jump_lga = None
 
 # =========================================================
-# SIDEBAR
+# SIDEBAR NAVIGATION
 # =========================================================
 
 with st.sidebar:
-
     st.markdown(
         (
             '<div class="sidebar-brand">'
             '<div class="sidebar-brand-title">'
-            "Nigerian Education<br>"
-            "Capacity Monitor"
+            "Nigerian Education<br>Capacity Monitor"
             "</div>"
             '<div class="sidebar-brand-subtitle">'
-            "Education infrastructure and teacher "
-            "distribution intelligence"
+            "Education infrastructure and teacher distribution intelligence"
             "</div>"
             "</div>"
         ),
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        "---"
-    )
+    st.markdown("---")
 
     st.markdown(
-        (
-            '<div class="sidebar-section">'
-            "Navigation"
-            "</div>"
-        ),
+        '<div class="sidebar-section">Navigation</div>',
         unsafe_allow_html=True,
     )
 
-    if (
-        st.session_state.view_level
-        != "country"
-    ):
-
+    if st.session_state.view_level != "country":
         if st.button(
             "⌂  National Overview",
             use_container_width=True,
             key="national_overview_button",
         ):
-            st.session_state.view_level = (
-                "country"
-            )
-
-            st.session_state.selected_state = (
-                None
-            )
-
-            st.session_state.selected_lga = (
-                None
-            )
-
+            st.session_state.view_level = "country"
+            st.session_state.selected_state = None
+            st.session_state.selected_lga = None
+            st.session_state.jump_state = None
+            st.session_state.jump_lga = None
             st.rerun()
 
-    if (
-        st.session_state.view_level
-        == "lga"
-    ):
-
+    if st.session_state.view_level == "lga":
         if st.button(
             f"←  {st.session_state.selected_state}",
             use_container_width=True,
             key="back_to_state_button",
         ):
-            st.session_state.view_level = (
-                "state"
-            )
-
-            st.session_state.selected_lga = (
-                None
-            )
-
+            st.session_state.view_level = "state"
+            st.session_state.selected_lga = None
+            st.session_state.jump_lga = None
             st.rerun()
 
+    # -----------------------------------------------------
+    # SEARCHABLE LOCATION NAVIGATION
+    # -----------------------------------------------------
+
     st.markdown(
-        (
-            '<div class="sidebar-section">'
-            "Risk Layer"
-            "</div>"
-        ),
+        '<div class="sidebar-section">Jump to Location</div>',
         unsafe_allow_html=True,
     )
 
-    st.session_state[
-        "risk_overall"
-    ] = (
+    st.selectbox(
+        "State",
+        options=state_options,
+        index=None,
+        placeholder="Search or select a state",
+        key="jump_state",
+        on_change=jump_to_state,
+    )
+
+    active_state = st.session_state.get(
+        "jump_state"
+    )
+
+    if active_state:
+        lga_options, lga_labels = get_lga_navigation_options(
+            lga_geojson,
+            active_state,
+        )
+
+        if (
+            st.session_state.selected_lga
+            in lga_options
+        ):
+            st.session_state.jump_lga = (
+                st.session_state.selected_lga
+            )
+
+        elif (
+            st.session_state.jump_lga
+            not in lga_options
+        ):
+            st.session_state.jump_lga = None
+
+        st.selectbox(
+            "LGA",
+            options=lga_options,
+            index=None,
+            placeholder="Search or select an LGA",
+            format_func=lambda key: lga_labels.get(key, key),
+            key="jump_lga",
+            on_change=jump_to_lga,
+        )
+
+    else:
+        st.selectbox(
+            "LGA",
+            options=[],
+            index=None,
+            placeholder="Select a state first",
+            disabled=True,
+            key="jump_lga_disabled",
+        )
+
+    st.caption(
+        "Type inside a dropdown to search."
+    )
+
+    # -----------------------------------------------------
+    # RISK LAYER
+    # -----------------------------------------------------
+
+    st.markdown(
+        '<div class="sidebar-section">Risk Layer</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.session_state["risk_overall"] = (
         st.session_state.risk_mode
         == "Overall Capacity Risk"
     )
 
-    st.session_state[
-        "risk_teacher"
-    ] = (
+    st.session_state["risk_teacher"] = (
         st.session_state.risk_mode
         == "Teacher Pressure"
     )
 
-    st.session_state[
-        "risk_classroom"
-    ] = (
+    st.session_state["risk_classroom"] = (
         st.session_state.risk_mode
         == "Classroom Overcrowding"
     )
@@ -1926,90 +1027,52 @@ with st.sidebar:
         "Overall Capacity Risk",
         key="risk_overall",
         on_change=select_risk_mode,
-        args=(
-            "Overall Capacity Risk",
-        ),
+        args=("Overall Capacity Risk",),
     )
 
     st.checkbox(
         "Teacher Pressure",
         key="risk_teacher",
         on_change=select_risk_mode,
-        args=(
-            "Teacher Pressure",
-        ),
+        args=("Teacher Pressure",),
     )
 
     st.checkbox(
         "Classroom Overcrowding",
         key="risk_classroom",
         on_change=select_risk_mode,
-        args=(
-            "Classroom Overcrowding",
-        ),
+        args=("Classroom Overcrowding",),
     )
 
 # =========================================================
-# ACTIVE RISK MODE
+# ACTIVE RISK LAYER
 # =========================================================
 
-risk_mode = (
-    st.session_state.risk_mode
-)
+risk_mode = st.session_state.risk_mode
 
-if (
-    risk_mode
-    == "Teacher Pressure"
-):
-    risk_column = (
-        "teacher_pressure"
-    )
+if risk_mode == "Teacher Pressure":
+    risk_column = "teacher_pressure"
+    risk_label = "Teacher Pressure"
 
-    risk_label = (
-        "Teacher Pressure"
-    )
-
-elif (
-    risk_mode
-    == "Classroom Overcrowding"
-):
-    risk_column = (
-        "classroom_pressure"
-    )
-
-    risk_label = (
-        "Classroom Pressure"
-    )
+elif risk_mode == "Classroom Overcrowding":
+    risk_column = "classroom_pressure"
+    risk_label = "Classroom Pressure"
 
 else:
-    risk_column = (
-        "overall_pressure"
-    )
-
-    risk_label = (
-        "Overall Capacity Risk"
-    )
+    risk_column = "overall_pressure"
+    risk_label = "Overall Capacity Risk"
 
 # =========================================================
 # SIDEBAR CONTEXT
 # =========================================================
 
 with st.sidebar:
-
     st.markdown(
-        (
-            '<div class="sidebar-section">'
-            "National Snapshot"
-            "</div>"
-        ),
+        '<div class="sidebar-section">National Snapshot</div>',
         unsafe_allow_html=True,
     )
 
-    snapshot1, snapshot2 = (
-        st.columns(
-            2
-        )
-    )
+    snapshot1, snapshot2 = st.columns(2)
 
     snapshot1.metric(
         "Records",
@@ -2018,16 +1081,10 @@ with st.sidebar:
 
     snapshot2.metric(
         "LGAs",
-        capacity_df[
-            "lga_key"
-        ].nunique(),
+        capacity_df["lga_key"].nunique(),
     )
 
-    snapshot3, snapshot4 = (
-        st.columns(
-            2
-        )
-    )
+    snapshot3, snapshot4 = st.columns(2)
 
     snapshot3.metric(
         "Teacher Alerts",
@@ -2039,141 +1096,150 @@ with st.sidebar:
         f"{int(capacity_df['classroom_warning'].sum()):,}",
     )
 
-    if (
-        st.session_state.view_level
-        == "country"
-    ):
-
+    if st.session_state.view_level == "country":
         st.markdown(
-            (
-                '<div class="sidebar-section">'
-                "Highest Pressure States"
-                "</div>"
-            ),
+            '<div class="sidebar-section">Highest Pressure States</div>',
             unsafe_allow_html=True,
         )
 
         ranking = (
             state_map_df[
-                state_map_df[
-                    risk_column
-                ].notna()
+                state_map_df[risk_column].notna()
             ]
             .sort_values(
                 risk_column,
                 ascending=False,
             )
-            .head(
-                7
-            )
+            .head(7)
         )
 
         for _, row in ranking.iterrows():
-
-            severity = (
-                classify_pressure(
-                    row[
-                        risk_column
-                    ]
-                )
+            severity = classify_pressure(
+                row[risk_column]
             )
 
-            color = (
-                severity_color(
-                    severity
-                )
+            color = severity_color(
+                severity
             )
 
             st.markdown(
                 (
                     '<div class="sidebar-risk-row">'
-                    '<span>'
-                    f'<span style="display:inline-block;'
-                    f'width:8px;height:8px;border-radius:50%;'
-                    f'background:{color};margin-right:7px;">'
-                    '</span>'
+                    "<span>"
+                    '<span style="display:inline-block;'
+                    "width:8px;height:8px;border-radius:50%;"
+                    f'background:{color};margin-right:7px;"></span>'
                     f'{row["state_name"]}'
-                    '</span>'
+                    "</span>"
                     '<span class="sidebar-risk-score">'
                     f'{row[risk_column]:.2f}×'
-                    '</span>'
-                    '</div>'
+                    "</span>"
+                    "</div>"
                 ),
                 unsafe_allow_html=True,
             )
 
-    elif (
-        st.session_state.selected_state
-    ):
-
-        lga_sidebar_summary = (
-            build_lga_summary(
-                capacity_df,
-                st.session_state.selected_state,
-            )
+    elif st.session_state.selected_state:
+        lga_sidebar_summary = build_lga_summary(
+            capacity_df,
+            st.session_state.selected_state,
         )
 
         st.markdown(
             (
                 '<div class="sidebar-section">'
-                f'{st.session_state.selected_state} LGAs'
-                '</div>'
+                f"{st.session_state.selected_state} LGAs"
+                "</div>"
             ),
             unsafe_allow_html=True,
         )
 
-        if (
-            not lga_sidebar_summary.empty
-        ):
-
+        if not lga_sidebar_summary.empty:
             ranking = (
                 lga_sidebar_summary
                 .sort_values(
                     risk_column,
                     ascending=False,
                 )
-                .head(
-                    7
-                )
+                .head(7)
             )
 
             for _, row in ranking.iterrows():
-
-                severity = (
-                    classify_pressure(
-                        row[
-                            risk_column
-                        ]
-                    )
+                severity = classify_pressure(
+                    row[risk_column]
                 )
 
-                color = (
-                    severity_color(
-                        severity
-                    )
+                color = severity_color(
+                    severity
                 )
 
                 st.markdown(
                     (
                         '<div class="sidebar-risk-row">'
-                        '<span>'
-                        f'<span style="display:inline-block;'
-                        f'width:8px;height:8px;border-radius:50%;'
-                        f'background:{color};margin-right:7px;">'
-                        '</span>'
+                        "<span>"
+                        '<span style="display:inline-block;'
+                        "width:8px;height:8px;border-radius:50%;"
+                        f'background:{color};margin-right:7px;"></span>'
                         f'{row["dnemis_lga"]}'
-                        '</span>'
+                        "</span>"
                         '<span class="sidebar-risk-score">'
                         f'{row[risk_column]:.2f}×'
-                        '</span>'
-                        '</div>'
+                        "</span>"
+                        "</div>"
                     ),
                     unsafe_allow_html=True,
                 )
 
+    # -----------------------------------------------------
+    # PIPELINE STATUS
+    # -----------------------------------------------------
+
     st.markdown(
-        "---"
+        '<div class="sidebar-section">Data Pipeline</div>',
+        unsafe_allow_html=True,
     )
+
+    pipeline_status = load_pipeline_status()
+
+    if pipeline_status:
+        status = pipeline_status.get(
+            "status",
+            "UNKNOWN",
+        )
+
+        finished_at = format_pipeline_time(
+            pipeline_status.get("finished_at")
+        )
+
+        if status == "SUCCESS":
+            st.markdown(
+                "🟢 **Last refresh successful**"
+            )
+
+        elif status == "FAILED":
+            st.markdown(
+                "🔴 **Last refresh failed**"
+            )
+
+        else:
+            st.markdown(
+                f"⚪ **Pipeline status: {status.title()}**"
+            )
+
+        st.caption(
+            finished_at
+        )
+
+    else:
+        st.markdown(
+            "⚪ **No pipeline run metadata**"
+        )
+
+        st.caption(
+            r"Run python src\run_pipeline.py to create it."
+        )
+
+    st.markdown("---")
 
     st.caption(
         "Source: Nigeria DNEMIS · 2024"
@@ -2184,28 +1250,17 @@ with st.sidebar:
     )
 
 # =========================================================
-# MAIN HEADER
+# PAGE HEADER
 # =========================================================
 
-if (
-    st.session_state.view_level
-    == "country"
-):
-
-    page_title = (
-        "National Education Capacity"
-    )
-
+if st.session_state.view_level == "country":
+    page_title = "National Education Capacity"
     page_subtitle = (
         "Monitor teacher distribution and "
         "classroom pressure across Nigeria."
     )
 
-elif (
-    st.session_state.view_level
-    == "state"
-):
-
+elif st.session_state.view_level == "state":
     page_title = (
         f"{st.session_state.selected_state} "
         "Education Capacity"
@@ -2217,9 +1272,7 @@ elif (
     )
 
 else:
-    page_title = (
-        "LGA Capacity Profile"
-    )
+    page_title = "LGA Capacity Profile"
 
     page_subtitle = (
         f"{st.session_state.selected_state} · "
@@ -2228,12 +1281,8 @@ else:
 
 st.markdown(
     (
-        f'<div class="dashboard-title">'
-        f'{page_title}'
-        f'</div>'
-        f'<div class="dashboard-subtitle">'
-        f'{page_subtitle}'
-        f'</div>'
+        f'<div class="dashboard-title">{page_title}</div>'
+        f'<div class="dashboard-subtitle">{page_subtitle}</div>'
     ),
     unsafe_allow_html=True,
 )
@@ -2242,39 +1291,23 @@ st.markdown(
 # COUNTRY VIEW
 # =========================================================
 
-if (
-    st.session_state.view_level
-    == "country"
-):
-
+if st.session_state.view_level == "country":
     teacher_warnings = int(
-        capacity_df[
-            "teacher_warning"
-        ].sum()
+        capacity_df["teacher_warning"].sum()
     )
 
     classroom_warnings = int(
-        capacity_df[
-            "classroom_warning"
-        ].sum()
+        capacity_df["classroom_warning"].sum()
     )
 
     dual_warnings = int(
         (
-            capacity_df[
-                "teacher_warning"
-            ]
-            & capacity_df[
-                "classroom_warning"
-            ]
+            capacity_df["teacher_warning"]
+            & capacity_df["classroom_warning"]
         ).sum()
     )
 
-    kpi1, kpi2, kpi3, kpi4 = (
-        st.columns(
-            4
-        )
-    )
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
     kpi1.metric(
         "Analyzable Records",
@@ -2297,11 +1330,7 @@ if (
     )
 
     st.markdown(
-        (
-            '<div class="section-label">'
-            "National Risk Map"
-            "</div>"
-        ),
+        '<div class="section-label">National Risk Map</div>',
         unsafe_allow_html=True,
     )
 
@@ -2328,143 +1357,67 @@ if (
     if (
         event
         and "selection" in event
-        and event[
-            "selection"
-        ][
-            "points"
-        ]
+        and event["selection"]["points"]
     ):
-
-        point = (
-            event[
-                "selection"
-            ][
-                "points"
-            ][
-                0
-            ]
-        )
-
+        point = event["selection"]["points"][0]
         selected_state = None
 
-        if point.get(
-            "customdata"
-        ):
-            selected_state = (
-                point[
-                    "customdata"
-                ][
-                    0
-                ]
-            )
+        if point.get("customdata"):
+            selected_state = point["customdata"][0]
 
-        elif point.get(
-            "location"
-        ):
-            selected_state = (
-                point[
-                    "location"
-                ]
-            )
+        elif point.get("location"):
+            selected_state = point["location"]
 
         if selected_state:
-
-            st.session_state.selected_state = (
-                selected_state
-            )
-
-            st.session_state.selected_lga = (
-                None
-            )
-
-            st.session_state.view_level = (
-                "state"
-            )
-
+            st.session_state.selected_state = selected_state
+            st.session_state.selected_lga = None
+            st.session_state.jump_state = selected_state
+            st.session_state.jump_lga = None
+            st.session_state.view_level = "state"
             st.rerun()
 
 # =========================================================
 # STATE VIEW
 # =========================================================
 
-elif (
-    st.session_state.view_level
-    == "state"
-):
-
-    selected_state = (
-        st.session_state.selected_state
+elif st.session_state.view_level == "state":
+    selected_state = st.session_state.selected_state
+    selected_state_key = normalize_state(
+        selected_state
     )
 
-    selected_state_key = (
-        normalize_state(
-            selected_state
+    state_data = capacity_df[
+        capacity_df["state_key"]
+        == selected_state_key
+    ].copy()
+
+    selected_summary = state_map_df[
+        state_map_df["state_key"]
+        == selected_state_key
+    ]
+
+    if not selected_summary.empty:
+        state_row = selected_summary.iloc[0]
+        state_pressure = state_row[risk_column]
+
+        state_severity = classify_pressure(
+            state_pressure
         )
-    )
 
-    state_data = (
-        capacity_df[
-            capacity_df[
-                "state_key"
-            ]
-            == selected_state_key
+        data_confidence = state_row[
+            "data_confidence"
         ]
-        .copy()
-    )
 
-    selected_summary = (
-        state_map_df[
-            state_map_df[
-                "state_key"
-            ]
-            == selected_state_key
+        coverage_pct = state_row[
+            "coverage_pct"
         ]
-    )
-
-    if (
-        not selected_summary.empty
-    ):
-
-        state_row = (
-            selected_summary.iloc[
-                0
-            ]
-        )
-
-        state_pressure = (
-            state_row[
-                risk_column
-            ]
-        )
-
-        state_severity = (
-            classify_pressure(
-                state_pressure
-            )
-        )
-
-        data_confidence = (
-            state_row[
-                "data_confidence"
-            ]
-        )
-
-        coverage_pct = (
-            state_row[
-                "coverage_pct"
-            ]
-        )
 
         analysed_lgas = int(
-            state_row[
-                "analysed_lgas"
-            ]
+            state_row["analysed_lgas"]
         )
 
         total_lgas = int(
-            state_row[
-                "total_lgas"
-            ]
+            state_row["total_lgas"]
         )
 
         render_badges(
@@ -2478,25 +1431,17 @@ elif (
         )
 
     if state_data.empty:
-
         st.warning(
             "No complete DNEMIS capacity records "
             "are available for this state."
         )
 
     else:
-
-        kpi1, kpi2, kpi3, kpi4 = (
-            st.columns(
-                4
-            )
-        )
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
         kpi1.metric(
             "LGAs Represented",
-            state_data[
-                "lga_key"
-            ].nunique(),
+            state_data["lga_key"].nunique(),
         )
 
         kpi2.metric(
@@ -2521,43 +1466,31 @@ elif (
             "Dual Warnings",
             int(
                 (
-                    state_data[
-                        "teacher_warning"
-                    ]
-                    & state_data[
-                        "classroom_warning"
-                    ]
+                    state_data["teacher_warning"]
+                    & state_data["classroom_warning"]
                 ).sum()
             ),
         )
 
-        lga_summary = (
-            build_lga_summary(
-                capacity_df,
-                selected_state,
-            )
+        lga_summary = build_lga_summary(
+            capacity_df,
+            selected_state,
         )
 
-        state_lga_geojson = (
-            get_state_lga_geojson(
-                lga_geojson,
-                selected_state,
-            )
+        state_lga_geojson = get_state_lga_geojson(
+            lga_geojson,
+            selected_state,
         )
 
-        lga_map_df = (
-            build_lga_map_dataframe(
-                state_lga_geojson,
-                lga_summary,
-            )
+        lga_map_df = build_lga_map_dataframe(
+            state_lga_geojson,
+            lga_summary,
         )
 
         st.markdown(
-            (
-                '<div class="section-label">'
-                "Local Government Risk Map"
-                "</div>"
-            ),
+            '<div class="section-label">'
+            "Local Government Risk Map"
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -2565,88 +1498,56 @@ elif (
             "Select an LGA to open its detailed capacity profile."
         )
 
-        lga_fig = (
-            create_lga_map(
-                lga_map_df,
-                state_lga_geojson,
-                risk_column,
-                risk_label,
-            )
+        lga_fig = create_lga_map(
+            lga_map_df,
+            state_lga_geojson,
+            risk_column,
+            risk_label,
         )
 
-        lga_event = (
-            st.plotly_chart(
-                lga_fig,
-                width="stretch",
-                key="lga_map",
-                on_select="rerun",
-                selection_mode="points",
-                config=MAP_CONFIG,
-            )
+        lga_event = st.plotly_chart(
+            lga_fig,
+            width="stretch",
+            key="lga_map",
+            on_select="rerun",
+            selection_mode="points",
+            config=MAP_CONFIG,
         )
 
         if (
             lga_event
-            and "selection"
-            in lga_event
-            and lga_event[
-                "selection"
-            ][
-                "points"
-            ]
+            and "selection" in lga_event
+            and lga_event["selection"]["points"]
         ):
+            point = lga_event[
+                "selection"
+            ]["points"][0]
 
-            point = (
-                lga_event[
-                    "selection"
-                ][
-                    "points"
-                ][
-                    0
-                ]
-            )
-
-            if point.get(
-                "customdata"
-            ):
-
-                selected_lga = (
-                    point[
-                        "customdata"
-                    ][
-                        1
-                    ]
-                )
+            if point.get("customdata"):
+                selected_lga = point[
+                    "customdata"
+                ][1]
 
                 if selected_lga:
-
                     st.session_state.selected_lga = (
                         selected_lga
                     )
 
-                    st.session_state.view_level = (
-                        "lga"
+                    st.session_state.jump_lga = (
+                        selected_lga
                     )
 
+                    st.session_state.view_level = "lga"
                     st.rerun()
 
-        no_data_lgas = (
-            lga_map_df[
-                ~lga_map_df[
-                    "has_data"
-                ]
-            ][
-                "lga_geo_name"
-            ]
-            .tolist()
-        )
+        no_data_lgas = lga_map_df[
+            ~lga_map_df["has_data"]
+        ]["lga_geo_name"].tolist()
 
         if no_data_lgas:
-
             with st.expander(
                 "LGAs without complete capacity data"
             ):
-
                 st.write(
                     ", ".join(
                         no_data_lgas
@@ -2657,11 +1558,7 @@ elif (
 # LGA VIEW
 # =========================================================
 
-elif (
-    st.session_state.view_level
-    == "lga"
-):
-
+elif st.session_state.view_level == "lga":
     selected_state = (
         st.session_state.selected_state
     )
@@ -2670,56 +1567,37 @@ elif (
         st.session_state.selected_lga
     )
 
-    state_key = (
-        normalize_state(
-            selected_state
-        )
+    state_key = normalize_state(
+        selected_state
     )
 
-    lga_data = (
-        capacity_df[
-            (
-                capacity_df[
-                    "state_key"
-                ]
-                == state_key
-            )
-            & (
-                capacity_df[
-                    "lga_key"
-                ]
-                == selected_lga_key
-            )
-        ]
-        .copy()
-    )
+    lga_data = capacity_df[
+        (
+            capacity_df["state_key"]
+            == state_key
+        )
+        & (
+            capacity_df["lga_key"]
+            == selected_lga_key
+        )
+    ].copy()
 
     if lga_data.empty:
-
         st.warning(
             "No complete capacity data is available for this LGA."
         )
 
     else:
-
         display_lga_name = (
-            lga_data[
-                "lga"
-            ]
-            .iloc[
-                0
-            ]
+            lga_data["lga"]
+            .iloc[0]
         )
 
         st.markdown(
             (
-                '<div style="'
-                'font-size:1.55rem;'
-                'font-weight:800;'
-                'color:#f5f7fb;'
-                'margin-bottom:8px;">'
-                f'{display_lga_name}'
-                '</div>'
+                '<div style="font-size:1.55rem;font-weight:800;'
+                'color:#f5f7fb;margin-bottom:8px;">'
+                f"{display_lga_name}</div>"
             ),
             unsafe_allow_html=True,
         )
@@ -2728,18 +1606,14 @@ elif (
             lga_data[
                 "teacher_pressure_index"
             ]
-            .quantile(
-                0.75
-            )
+            .quantile(0.75)
         )
 
         classroom_pressure = (
             lga_data[
                 "classroom_pressure_index"
             ]
-            .quantile(
-                0.75
-            )
+            .quantile(0.75)
         )
 
         overall_pressure = max(
@@ -2747,10 +1621,8 @@ elif (
             classroom_pressure,
         )
 
-        severity = (
-            classify_pressure(
-                overall_pressure
-            )
+        severity = classify_pressure(
+            overall_pressure
         )
 
         render_badges(
@@ -2761,9 +1633,7 @@ elif (
             lga_data[
                 "teacher_gap"
             ]
-            .fillna(
-                0
-            )
+            .fillna(0)
             .sum()
         )
 
@@ -2771,16 +1641,12 @@ elif (
             lga_data[
                 "learners"
             ]
-            .fillna(
-                0
-            )
+            .fillna(0)
             .sum()
         )
 
         kpi1, kpi2, kpi3, kpi4 = (
-            st.columns(
-                4
-            )
+            st.columns(4)
         )
 
         kpi1.metric(
@@ -2807,22 +1673,16 @@ elif (
         # PRIORITY SEGMENT
         # -------------------------------------------------
 
-        segment_df = (
-            lga_data.copy()
-        )
+        segment_df = lga_data.copy()
 
-        segment_df[
-            "segment_pressure"
-        ] = (
+        segment_df["segment_pressure"] = (
             segment_df[
                 [
                     "teacher_pressure_index",
                     "classroom_pressure_index",
                 ]
             ]
-            .max(
-                axis=1
-            )
+            .max(axis=1)
         )
 
         worst_row = (
@@ -2831,36 +1691,30 @@ elif (
                 "segment_pressure",
                 ascending=False,
             )
-            .iloc[
-                0
-            ]
+            .iloc[0]
         )
 
         st.markdown(
-            (
-                '<div class="section-label">'
-                "Priority Signal"
-                "</div>"
-            ),
+            '<div class="section-label">Priority Signal</div>',
             unsafe_allow_html=True,
         )
 
         priority_html = (
             '<div class="info-card">'
-            '<strong>Highest-pressure segment</strong>'
-            '<br><br>'
+            "<strong>Highest-pressure segment</strong>"
+            "<br><br>"
             f'{worst_row["education_level"]} · '
             f'{worst_row["ownership"]}'
-            '<br><br>'
-            'Overall pressure: '
+            "<br><br>"
+            "Overall pressure: "
             f'<strong>{worst_row["segment_pressure"]:.2f}×</strong>'
-            '&nbsp;&nbsp;&nbsp;'
-            'Teacher: '
+            "&nbsp;&nbsp;&nbsp;"
+            "Teacher: "
             f'<strong>{worst_row["teacher_pressure_index"]:.2f}×</strong>'
-            '&nbsp;&nbsp;&nbsp;'
-            'Classroom: '
+            "&nbsp;&nbsp;&nbsp;"
+            "Classroom: "
             f'<strong>{worst_row["classroom_pressure_index"]:.2f}×</strong>'
-            '</div>'
+            "</div>"
         )
 
         st.markdown(
@@ -2873,11 +1727,9 @@ elif (
         # -------------------------------------------------
 
         st.markdown(
-            (
-                '<div class="section-label">'
-                "Pressure by Education Level"
-                "</div>"
-            ),
+            '<div class="section-label">'
+            "Pressure by Education Level"
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -2899,9 +1751,7 @@ elif (
                 }
             )
             .reset_index()
-            .round(
-                2
-            )
+            .round(2)
         )
 
         detail_chart = (
@@ -2914,199 +1764,98 @@ elif (
             detail_chart,
             width="stretch",
             key="lga_detail_pressure_chart",
-            config={
-                "displayModeBar": False,
-            },
+            config={"displayModeBar": False},
         )
 
         # -------------------------------------------------
-        # CAPACITY TABLE
+        # TABLE
         # -------------------------------------------------
 
         st.markdown(
-            (
-                '<div class="section-label">'
-                "Capacity Breakdown"
-                "</div>"
-            ),
+            '<div class="section-label">'
+            "Capacity Breakdown"
+            "</div>",
             unsafe_allow_html=True,
         )
 
-        detail_table = (
-            lga_data[
-                [
-                    "education_level",
-                    "ownership",
-                    "learners",
-                    "teachers",
-                    "source_learner_teacher_ratio",
-                    "teacher_gap",
-                    "teacher_pressure_index",
-                    "learners_per_classroom",
-                    "classroom_pressure_index",
-                    "teacher_warning",
-                    "classroom_warning",
-                ]
+        detail_table = lga_data[
+            [
+                "education_level",
+                "ownership",
+                "learners",
+                "teachers",
+                "source_learner_teacher_ratio",
+                "teacher_gap",
+                "teacher_pressure_index",
+                "learners_per_classroom",
+                "classroom_pressure_index",
+                "teacher_warning",
+                "classroom_warning",
             ]
-            .copy()
-        )
+        ].copy()
 
-        detail_table[
-            "teacher_gap"
-        ] = (
-            detail_table[
-                "teacher_gap"
-            ]
-            .fillna(
-                0
-            )
+        detail_table["teacher_gap"] = (
+            detail_table["teacher_gap"]
+            .fillna(0)
             .round()
-            .astype(
-                int
-            )
+            .astype(int)
         )
 
-        detail_table[
-            "learners"
-        ] = (
-            detail_table[
-                "learners"
-            ]
-            .fillna(
-                0
-            )
-            .astype(
-                int
-            )
+        detail_table["learners"] = (
+            detail_table["learners"]
+            .fillna(0)
+            .astype(int)
         )
 
-        detail_table[
-            "teachers"
-        ] = (
-            detail_table[
-                "teachers"
-            ]
-            .fillna(
-                0
-            )
-            .astype(
-                int
-            )
+        detail_table["teachers"] = (
+            detail_table["teachers"]
+            .fillna(0)
+            .astype(int)
         )
 
-        detail_table = (
-            detail_table
-            .rename(
-                columns={
-                    "education_level": "Level",
-                    "ownership": "Owner",
-                    "learners": "Learners",
-                    "teachers": "Teachers",
-                    "source_learner_teacher_ratio": "L/T Ratio",
-                    "teacher_gap": "T Gap",
-                    "teacher_pressure_index": "T Pressure",
-                    "learners_per_classroom": "L/Class",
-                    "classroom_pressure_index": "C Pressure",
-                    "teacher_warning": "T Warn",
-                    "classroom_warning": "C Warn",
-                }
-            )
+        detail_table = detail_table.rename(
+            columns={
+                "education_level": "Level",
+                "ownership": "Owner",
+                "learners": "Learners",
+                "teachers": "Teachers",
+                "source_learner_teacher_ratio": "L/T Ratio",
+                "teacher_gap": "T Gap",
+                "teacher_pressure_index": "T Pressure",
+                "learners_per_classroom": "L/Class",
+                "classroom_pressure_index": "C Pressure",
+                "teacher_warning": "T Warn",
+                "classroom_warning": "C Warn",
+            }
         )
 
-        detail_table[
-            "L/T Ratio"
-        ] = (
-            detail_table[
-                "L/T Ratio"
-            ]
-            .fillna(
-                0
+        for column, decimals in {
+            "L/T Ratio": 1,
+            "T Pressure": 2,
+            "L/Class": 1,
+            "C Pressure": 2,
+        }.items():
+            detail_table[column] = (
+                detail_table[column]
+                .fillna(0)
+                .round(decimals)
             )
-            .round(
-                1
-            )
-        )
 
-        detail_table[
-            "T Pressure"
-        ] = (
-            detail_table[
-                "T Pressure"
-            ]
-            .fillna(
-                0
-            )
-            .round(
-                2
-            )
-        )
-
-        detail_table[
-            "L/Class"
-        ] = (
-            detail_table[
-                "L/Class"
-            ]
-            .fillna(
-                0
-            )
-            .round(
-                1
-            )
-        )
-
-        detail_table[
-            "C Pressure"
-        ] = (
-            detail_table[
-                "C Pressure"
-            ]
-            .fillna(
-                0
-            )
-            .round(
-                2
-            )
-        )
-
-        detail_table[
+        detail_table["T Warn"] = detail_table[
             "T Warn"
-        ] = (
-            detail_table[
-                "T Warn"
-            ]
-            .map(
-                lambda x:
-                "Yes"
-                if bool(
-                    x
-                )
-                else "No"
-            )
+        ].map(
+            lambda x: "Yes" if bool(x) else "No"
         )
 
-        detail_table[
+        detail_table["C Warn"] = detail_table[
             "C Warn"
-        ] = (
-            detail_table[
-                "C Warn"
-            ]
-            .map(
-                lambda x:
-                "Yes"
-                if bool(
-                    x
-                )
-                else "No"
-            )
+        ].map(
+            lambda x: "Yes" if bool(x) else "No"
         )
 
-        detail_table = (
-            detail_table
-            .sort_values(
-                "T Pressure",
-                ascending=False,
-            )
+        detail_table = detail_table.sort_values(
+            "T Pressure",
+            ascending=False,
         )
 
         render_blended_table(
@@ -3118,55 +1867,35 @@ elif (
         # -------------------------------------------------
 
         st.markdown(
-            (
-                '<div class="section-label">'
-                "Interpretation"
-                "</div>"
-            ),
+            '<div class="section-label">Interpretation</div>',
             unsafe_allow_html=True,
         )
 
-        if (
-            teacher_pressure
-            > 1
-        ):
-
+        if teacher_pressure > 1:
             st.write(
                 f"Teacher pressure is "
                 f"**{teacher_pressure:.2f}×** "
                 "the 35 learners-per-teacher benchmark."
             )
-
         else:
-
             st.write(
                 "Teacher capacity is within the benchmark "
                 "based on the available data."
             )
 
-        if (
-            classroom_pressure
-            > 1
-        ):
-
+        if classroom_pressure > 1:
             st.write(
                 f"Classroom pressure is "
                 f"**{classroom_pressure:.2f}×** "
                 "the benchmark, indicating potential overcrowding."
             )
-
         else:
-
             st.write(
                 "Classroom capacity is within the benchmark "
                 "based on the available data."
             )
 
-        if (
-            total_teacher_gap
-            > 0
-        ):
-
+        if total_teacher_gap > 0:
             st.write(
                 "The available records imply an estimated "
                 f"teacher shortfall of approximately "
