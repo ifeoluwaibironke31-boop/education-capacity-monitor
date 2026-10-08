@@ -1,8 +1,6 @@
 import copy
-import json
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -91,7 +89,6 @@ footer{background:var(--background)}
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STATE_GEOJSON_PATH = PROJECT_ROOT / "data" / "reference" / "nigeria_states.geojson"
 LGA_GEOJSON_PATH = PROJECT_ROOT / "data" / "reference" / "nigeria_lgas_enriched.geojson"
-LATEST_RUN_PATH = PROJECT_ROOT / "logs" / "latest_pipeline_run.json"
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
@@ -147,30 +144,6 @@ LGA_ALIASES = {
     ("yobe", "bursari"): "busari",
     ("zamfara", "birnin magaji kiyaw"): "birnin magaji",
 }
-
-# =========================================================
-# PIPELINE STATUS
-# =========================================================
-
-def load_pipeline_status():
-    if not LATEST_RUN_PATH.exists():
-        return None
-
-    try:
-        with open(LATEST_RUN_PATH, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def format_pipeline_time(value):
-    if not value:
-        return "Timestamp unavailable"
-
-    try:
-        return datetime.fromisoformat(value).strftime("%d %b %Y · %H:%M")
-    except ValueError:
-        return value
 
 # =========================================================
 # GEOGRAPHY
@@ -1189,55 +1162,6 @@ with st.sidebar:
                     ),
                     unsafe_allow_html=True,
                 )
-
-    # -----------------------------------------------------
-    # PIPELINE STATUS
-    # -----------------------------------------------------
-
-    st.markdown(
-        '<div class="sidebar-section">Data Pipeline</div>',
-        unsafe_allow_html=True,
-    )
-
-    pipeline_status = load_pipeline_status()
-
-    if pipeline_status:
-        status = pipeline_status.get(
-            "status",
-            "UNKNOWN",
-        )
-
-        finished_at = format_pipeline_time(
-            pipeline_status.get("finished_at")
-        )
-
-        if status == "SUCCESS":
-            st.markdown(
-                "🟢 **Last refresh successful**"
-            )
-
-        elif status == "FAILED":
-            st.markdown(
-                "🔴 **Last refresh failed**"
-            )
-
-        else:
-            st.markdown(
-                f"⚪ **Pipeline status: {status.title()}**"
-            )
-
-        st.caption(
-            finished_at
-        )
-
-    else:
-        st.markdown(
-            "⚪ **No pipeline run metadata**"
-        )
-
-        st.caption(
-            r"Run python src\run_pipeline.py to create it."
-        )
 
     st.markdown("---")
 
