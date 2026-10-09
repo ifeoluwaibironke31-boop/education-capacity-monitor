@@ -114,55 +114,6 @@ PostgreSQL
    ↓
 Streamlit Dashboard
 ```
-
-The complete pipeline can be run with:
-
-```powershell
-python src\run_pipeline.py
-```
-
----
-
-## Repository Structure
-
-```text
-education-capacity-monitor/
-│
-├── app/
-│   └── dashboard.py
-│
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── reference/
-│
-├── docs/
-│   └── data_contract.md
-│
-├── notebooks/
-│
-├── src/
-│   ├── extract/
-│   ├── validate/
-│   ├── transform/
-│   └── load/
-│
-├── logs/
-├── requirements.txt
-└── README.md
-```
-
-### Main folders
-
-- `app/` — Streamlit dashboard
-- `src/extract/` — source-data extraction
-- `src/validate/` — data and geography validation
-- `src/transform/` — capacity and reporting transformations
-- `src/load/` — PostgreSQL loading
-- `data/reference/` — geographic reference files
-- `notebooks/` — source exploration and analysis
-- `docs/` — project documentation
-
 ---
 
 ## Production Data
@@ -187,32 +138,6 @@ Contains:
 - Reporting rate
 - Data Confidence
 - Reporting validation status
-
----
-
-## Running the Project Locally
-
-Create and activate a Python virtual environment, install the dependencies, and configure the required database environment variables.
-
-Install dependencies:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Run the full data pipeline:
-
-```powershell
-python src\run_pipeline.py
-```
-
-Start the dashboard:
-
-```powershell
-streamlit run app\dashboard.py
-```
-
-Database credentials should be stored in environment variables.
 
 ---
 
@@ -267,14 +192,12 @@ The current MVP focuses on:
 
 The streamlit dashboard gets its data form PostgreSQL while the map files are stored in the project repository.
 
-The dashboard separates three important ideas:
+The dashboard separates two important ideas:
 
 ```text
 Capacity Pressure = teacher and classroom pressure
 
 Data Confidence = school reporting completeness
-
-Geographic Coverage = LGA representation
 ```
 
 The dashboard is intended to help users, policy makers or government official to identify areas that may need extra resources in their schools or require further investigation using the available education data.
