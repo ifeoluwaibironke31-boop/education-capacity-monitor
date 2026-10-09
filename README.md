@@ -1,29 +1,278 @@
-# Education Capacity Early-Warning System
+# Nigerian Education Capacity Monitor
 
-A Nigerian education data project designed to identify LGAs experiencing:
+The **Nigerian Education Capacity Monitor** is a data engineering and analytics project that helps identify areas in Nigeria where learner demand may be putting pressure on available teachers and classrooms.
 
-1. Classroom capacity pressure
-2. Teacher allocation imbalance
+It transforms public Nigerian education data into an interactive dashboard that allows users to explore education capacity from the **national level down to individual States and LGAs**.
 
-The project ingests publicly available education data, validates it, stores it in PostgreSQL, calculates analytical indicators, and serves the results through a web dashboard.
+---
 
-## Main Data Source
+## Purpose
 
-Federal Ministry of Education DNEMIS / Annual School Census.
+Education statistics may show how many learners, teachers, classrooms, and schools exist, but they do not always make it easy to identify where the greatest capacity problems are.
 
-## MVP
+This project turns those statistics into simple warning indicators that help answer questions such as:
 
-The first version focuses on:
+- Which States and LGAs have the highest teacher pressure?
+- Where is classroom overcrowding most severe?
+- Where might additional teachers be required?
+- How complete is the school reporting data behind each result?
+- Which education segments within an LGA show the greatest pressure?
 
-- learners
-- teachers
-- classrooms
-- school reporting coverage
-- state
-- LGA
-- school ownership
-- education level
+The project is designed as an **analytical warning system and decision-support tool**
 
-## Pipeline
+---
 
-Source → Raw Data → Validation → Transformation → PostgreSQL → Analytics → Dashboard
+## What the Project Does
+
+The system:
+
+- Extracts public DNEMIS education data
+- Validates the raw source data
+- Transforms raw education data into useful metrics for analysis
+- Calculates teacher and classroom pressure
+- Estimates teacher gaps
+- Calculates school reporting rates
+- Assigns Data Confidence levels
+- Validates State and LGA geography
+- Loads processed data into PostgreSQL
+- Presents the results through an interactive Streamlit dashboard
+
+Users can explore the dashboard through:
+
+**Nigeria → State → LGA**
+
+---
+
+## Key Metrics
+
+### Teacher Pressure
+
+Measures how the reported learner-teacher ratio compares with the benchmark of **35 learners per teacher**.
+
+### Classroom Pressure
+
+Measures how the reported learners-per-classroom value compares with the benchmark of **35 learners per classroom**.
+
+### Reporting Rate
+
+Measures the percentage of schools in a region that reported data out of the total schools expected to report.
+
+```text
+Reporting Rate =
+Schools Reported / Schools Expected × 100
+```
+
+### Data Confidence
+
+Reporting rate is used to indicate how much reporting coverage supports the displayed results.
+
+### Geographic Coverage
+
+Shows how many official LGAs within a State have complete capacity data available for analysis.
+
+Data Confidence and Geographic Coverage are treated as separate measures.
+
+---
+
+## Data Source
+
+The project uses public **DNEMIS Annual School Census** data.
+
+The main source datasets include:
+
+- Indicator definitions
+- Organisation-unit hierarchy
+- Reporting periods
+- Education benchmark constants
+- Capacity indicators by education level and ownership
+- School reporting indicators
+
+State and LGA GeoJSON files are used for geographic validation and dashboard maps.
+
+---
+
+## Data Pipeline
+
+```text
+DNEMIS
+   ↓
+Extract
+   ↓
+Validate
+   ↓
+Transform
+   ↓
+Build Capacity Metrics
+   ↓
+Build Reporting Metrics
+   ↓
+Validate Geography
+   ↓
+PostgreSQL
+   ↓
+Streamlit Dashboard
+```
+
+The complete pipeline can be run with:
+
+```powershell
+python src\run_pipeline.py
+```
+
+---
+
+## Repository Structure
+
+```text
+education-capacity-monitor/
+│
+├── app/
+│   └── dashboard.py
+│
+├── data/
+│   ├── raw/
+│   ├── processed/
+│   └── reference/
+│
+├── docs/
+│   └── data_contract.md
+│
+├── notebooks/
+│
+├── src/
+│   ├── extract/
+│   ├── validate/
+│   ├── transform/
+│   └── load/
+│
+├── logs/
+├── requirements.txt
+└── README.md
+```
+
+### Main folders
+
+- `app/` — Streamlit dashboard
+- `src/extract/` — source-data extraction
+- `src/validate/` — data and geography validation
+- `src/transform/` — capacity and reporting transformations
+- `src/load/` — PostgreSQL loading
+- `data/reference/` — geographic reference files
+- `notebooks/` — source exploration and analysis
+- `docs/` — project documentation
+
+---
+
+## Production Data
+
+The project produces two main PostgreSQL tables:
+
+### `capacity_metrics`
+
+Contains the analytical data used to measure:
+
+- Teacher pressure
+- Classroom pressure
+- Teacher gaps
+- Capacity warnings
+
+### `reporting_metrics`
+
+Contains:
+
+- Schools reported
+- Schools expected
+- Reporting rate
+- Data Confidence
+- Reporting validation status
+
+---
+
+## Running the Project Locally
+
+Create and activate a Python virtual environment, install the dependencies, and configure the required database environment variables.
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Run the full data pipeline:
+
+```powershell
+python src\run_pipeline.py
+```
+
+Start the dashboard:
+
+```powershell
+streamlit run app\dashboard.py
+```
+
+Database credentials should be stored in environment variables.
+
+---
+
+## Deployment
+
+The deployed application uses:
+
+```text
+GitHub
+   ↓
+Streamlit Community Cloud
+   ↓
+Neon PostgreSQL
+```
+
+The Streamlit dashboard gets its data from PostgreSQL, while the map files are stored in the project repository.
+
+---
+
+## Project Architecture and Data Contract
+
+For detailed information about:
+
+- Data architecture
+- Source files
+- Analytical grain
+- Capacity calculations
+- Reporting-rate calculations
+- Data Confidence rules
+- Geographic coverage
+- Validation rules
+- Production tables
+- Pipeline architecture
+
+see:
+
+**[`docs/data_contract.md`](docs/data_contract.md)**
+
+---
+
+## MVP Scope
+
+The current MVP focuses on:
+
+- Teacher distribution pressure
+- Classroom overcrowding
+- Estimated teacher gaps
+- Reporting completeness
+- Data Confidence
+- Geographic coverage
+- State and LGA drill-down
+
+The streamlit dashboard gets its data form PostgreSQL while the map files are stored in the project repository.
+
+The dashboard separates three important ideas:
+
+```text
+Capacity Pressure = teacher and classroom pressure
+
+Data Confidence = school reporting completeness
+
+Geographic Coverage = LGA representation
+```
+
+The dashboard is intended to help users, policy makers or government official to identify areas that may need extra resources in their schools or require further investigation using the available education data.

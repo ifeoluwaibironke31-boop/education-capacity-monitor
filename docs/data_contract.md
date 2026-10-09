@@ -1,246 +1,238 @@
-# Education Capacity Early-Warning System — Data Contract
+# Nigerian Education Capacity Monitor — Data Contract
 
-## 1. Project Scope
+## 1. Project Purpose
 
-**Project name:** Education Capacity Early-Warning System
+The Nigerian Education Capacity Monitor is a data engineering and analytics project that identifies areas where learner demand may exceed available teacher and classroom capacity.
 
-**Purpose:**  
-Identify Nigerian LGAs where reported learner demand appears misaligned with available classroom and teacher capacity, while clearly accounting for data completeness.
+This MVP focuses on:
 
-**Core questions:**
-1. Which LGAs show the greatest classroom-capacity pressure?
-2. Which LGAs show the greatest teacher-allocation pressure?
+- Teacher distribution pressure
+- Classroom overcrowding
+- School reporting completeness
+- State and LGA geographic coverage
 
-**Primary unit of analysis:**
+The dashboard supports drill-down from:
 
-`school_year × state × lga × ownership × education_level`
-
-Example:
-
-`2024/2025 × Lagos × Oshodi/Isolo × Public × Primary`
+**Nigeria → State → LGA**
 
 ---
 
-## 2. Minimum Required Fields
+## 2. Data Source
 
-| Field | Type | Required | Description | Example |
-|---|---|---:|---|---|
-| `school_year` | string | Yes | Census/reporting year | `2024/2025` |
-| `state` | string | Yes | Nigerian state or FCT | `Lagos` |
-| `lga` | string | Yes | Local Government Area | `Oshodi/Isolo` |
-| `ownership` | string | Yes | School ownership grouping | `Public` |
-| `education_level` | string | Yes | Education level represented | `Primary` |
-| `schools_total` | integer | Yes | Total schools in scope | `699` |
-| `schools_reported` | integer | Yes | Schools that submitted data | `515` |
-| `learners` | integer | Yes | Number of learners | `74277` |
-| `teachers` | integer | Yes | Number of teachers | `5620` |
-| `classrooms` | integer | Yes | Number of classrooms | `4047` |
-| `source_name` | string | Yes | Source system/dataset | `DNEMIS ASC` |
-| `source_period` | string | Yes | Period represented by source | `2024/25` |
-| `source_url` | string | No | Source location | URL |
-| `loaded_at` | datetime | Yes | Pipeline load timestamp | `2026-10-02T18:00:00+01:00` |
+The project uses public 2024 Nigerian DNEMIS Annual School Census data.
+
+Main source files:
+
+- `dx.parquet` — indicator definitions
+- `ou.parquet` — Nigeria, State and LGA hierarchy
+- `pe.parquet` — reporting period
+- `constants.parquet` — benchmark values
+- `fact_typeown.parquet` — capacity indicators by education level and ownership
+- `fact.parquet` — reporting and geography-level indicators
+
+Geographic boundaries are provided through Nigeria State and LGA GeoJSON files.
 
 ---
 
-## 3. Allowed Categorical Values
+## 3. Data Pipeline
 
-### `ownership`
-Allowed values:
+```text
+DNEMIS
+   ↓
+Extract Raw Data
+   ↓
+Validate Source Data
+   ↓
+Transform Capacity Data
+   ↓
+Build Capacity Metrics
+   ↓
+Build Reporting Metrics
+   ↓
+Validate Geography
+   ↓
+Load data to PostgreSQL
+   ↓
+Streamlit Dashboard
+```
 
-- `Total`
-- `Public`
-- `Private`
+The complete pipeline is run with:
 
-### `education_level`
-Initial allowed values:
-
-- `Total`
-- `Primary`
-- `JSS`
-- `SSS`
-- `IQS`
-- `Tech/Voc`
-
-If DNEMIS uses different labels, preserve the raw value in the raw layer and map it to the canonical values during transformation.
-
----
-
-## 4. Hard Validation Rules
-
-Records that fail these checks should not enter the clean production table.
-
-1. `school_year` must not be null.
-2. `state` must not be null.
-3. `lga` must not be null.
-4. `ownership` must be one of the allowed values.
-5. `education_level` must be one of the allowed values.
-6. `schools_total >= 0`
-7. `schools_reported >= 0`
-8. `learners >= 0`
-9. `teachers >= 0`
-10. `classrooms >= 0`
-11. `schools_reported <= schools_total`
-12. `state` must exist in the canonical Nigerian state reference table.
-13. `lga` must exist in the canonical Nigerian LGA reference table.
-14. The `lga` must belong to the stated `state`.
-15. No duplicate row may exist for the natural key:
-
-`school_year + state + lga + ownership + education_level`
+```powershell
+python src\run_pipeline.py
+```
 
 ---
 
-## 5. Soft Warning Rules
+## 4. Capacity Metrics
 
-These records may still be loaded, but they must carry a warning flag.
+The capacity dataset uses the grain:
 
-1. `reporting_rate < 0.50`
-2. `learners > 0 AND teachers = 0`
-3. `learners > 0 AND classrooms = 0`
-4. `learner_teacher_ratio > 100`
-5. `learner_classroom_ratio > 150`
-6. Large year-over-year changes should be reviewed when historical data becomes available.
-7. Missing values in any important analytical field should be flagged.
+```text
+year × state × LGA × education level × ownership
+```
 
----
+Each record is an aggregated education segment, not an individual school.
 
-## 6. Derived Fields
+Core indicators:
 
-### Reporting Rate
+- Learners
+- Teachers
+- Learner-teacher ratio
+- Learners per classroom
 
-`reporting_rate = schools_reported / schools_total`
+Benchmark: UBE standard
 
-If `schools_total = 0`, reporting rate should be null and flagged.
+```text
+35 learners per teacher
+35 learners per classroom
+```
 
-### Learner–Classroom Ratio
+Teacher pressure:
 
-`learner_classroom_ratio = learners / classrooms`
+```text
+Teacher Pressure Index =
+Learner-Teacher Ratio / 35
+```
 
-If `classrooms = 0`, the ratio should be null/infinite in analysis and flagged rather than silently divided by zero.
+Classroom pressure:
 
-### Estimated Required Classrooms
+```text
+Classroom Pressure Index =
+Learners Per Classroom / 35
+```
 
-Using the current UBE comparison benchmark of 35 learners per classroom:
-
-`required_classrooms = ceil(learners / 35)`
-
-### Estimated Classroom Gap
-
-`estimated_classroom_gap = max(required_classrooms - classrooms, 0)`
-
-### Learner–Teacher Ratio
-
-`learner_teacher_ratio = learners / teachers`
-
-If `teachers = 0`, the ratio should be null/infinite in analysis and flagged.
-
-### LGA Learner Share Within State
-
-`lga_learner_share = lga_learners / state_learners`
-
-### LGA Teacher Share Within State
-
-`lga_teacher_share = lga_teachers / state_teachers`
-
-### Teacher Allocation Gap
-
-`teacher_allocation_gap = lga_teacher_share - lga_learner_share`
-
-A negative value indicates that the LGA has a smaller share of the state's teachers than its share of the state's learners.
+A pressure index above `1.0` means the benchmark has been exceeded.
 
 ---
 
-## 7. Data Confidence Classification
+## 5. Capacity Severity
 
-These are project-defined analytical categories, not official government classifications.
+| Pressure Index | Classification |
+|---:|---|
+| `≤ 1.0` | Normal |
+| `> 1.0 – 1.5` | Moderate |
+| `> 1.5 – 2.0` | High |
+| `> 2.0 – 3.0` | Severe |
+| `> 3.0` | Critical |
+
+Overall state/LGA pressure is based on whichever is worse: Teacher pressure or Classroom pressure.
+
+---
+
+## 6. Reporting Rate and Data Confidence
+
+Data Confidence is based on the percentage of schools expected to report that actually submitted data.
+
+```text
+Reporting Rate =
+Schools Reported / Schools Expected × 100
+```
+
+Confidence classification:
 
 | Reporting Rate | Confidence |
-|---|---|
-| `>= 90%` | High |
-| `70%–89.99%` | Moderate |
-| `50%–69.99%` | Low |
-| `< 50%` | Very Low |
+|---:|---|
+| `80% – 100%` | High |
+| `50% – <80%` | Medium |
+| `>0% – <50%` | Low |
+| `0%` | No Data |
+| `>100% or invalid` | Check Source |
 
-Every capacity warning shown to users should be displayed together with its reporting rate and confidence category.
-
----
-
-## 8. Data Lineage Requirements
-
-Every raw or transformed dataset should retain enough metadata to trace it back to its source.
-
-Recommended fields:
-
-- `source_name`
-- `source_url`
-- `source_period`
-- `source_file`
-- `ingested_at`
-- `pipeline_run_id`
-- `pipeline_version`
-
-Raw source files should never be overwritten. New reporting periods should be stored separately.
+Invalid source values are flagged rather than corrected: for example Yola-North, Adamawa
 
 ---
 
-## 9. Raw vs Clean Data Rules
+## 7. Geographic Coverage
 
-### Raw layer
-- Preserve source files exactly as received.
-- Do not rename source columns inside the raw copy.
-- Do not correct values in-place.
-- Store ingestion metadata.
+Geographic Coverage is separate from Data Confidence.
 
-### Clean/staging layer
-- Standardize column names.
-- Standardize state/LGA naming.
-- Map category values.
-- Apply validation rules.
-- Flag warnings.
-- Convert data types.
+For a state:
 
-### Analytics layer
-- Calculate ratios.
-- Calculate benchmark gaps.
-- Calculate teacher allocation measures.
-- Assign confidence categories.
-- Create alert-ready records for the dashboard.
+```text
+Geographic Coverage =
+LGAs with complete capacity data /
+Official LGAs in the state × 100
+```
 
----
+Therefore:
 
-## 10. MVP Boundaries
+```text
+Data Confidence = school reporting completeness
+Geographic Coverage = LGA representation
+Capacity Pressure = teacher/classroom pressure
+```
 
-The first version will focus only on:
-
-1. Classroom-capacity pressure
-2. Teacher-allocation pressure
-3. Data completeness/confidence
-
-The MVP will **not** attempt to solve:
-
-- exam performance
-- dropout prediction
-- school construction optimization
-- gender inequality
-- WASH
-- teacher subject specialization
-- funding allocation
-- AI recommendations
-- causal inference
-
-These can be future extensions only after the core product is working.
+These three measures are treated separately.
 
 ---
 
-## 11. Step 1 Completion Checklist
+## 8. Production Tables
 
-Step 1 is complete when all of the following exist:
+PostgreSQL contains two main analytical tables:
 
-- [ ] Project scope is frozen.
-- [ ] Core analytical questions are written down.
-- [ ] Primary unit of analysis is agreed.
-- [ ] This data contract is saved in the repository.
-- [ ] Project folder structure is created.
-- [ ] Source inventory is started.
-- [ ] DNEMIS has been inspected to identify its machine-readable data access pattern.
-- [ ] Relevant source formats are documented.
-- [ ] No production ETL or dashboard work has started yet.
+### `capacity_metrics`
+
+Contains teacher and classroom capacity metrics used by the dashboard.
+
+### `reporting_metrics`
+
+Contains:
+
+- Schools reported
+- Schools expected
+- Reporting rate
+- Data Confidence
+- Reporting validation status
+
+Reporting metrics are available at National, State and LGA level.
+
+---
+
+## 9. Validation Rules
+
+The pipeline checks:
+
+- Required files and columns
+- Valid organisation-unit relationships
+- Negative values
+- Unexpected categories
+- Incomplete capacity records
+- State/LGA name matching
+- Duplicate analytical records
+- Invalid reporting relationships
+
+Missing data is displayed as **No Data**, not as low risk.
+
+---
+
+## 10. Dashboard
+
+The Streamlit dashboard provides:
+
+- National risk map
+- State → LGA drill-down
+- Teacher pressure
+- Classroom pressure
+- Estimated teacher gap
+- Reporting rate
+- Data Confidence
+- Geographic coverage
+- Priority education segment
+- Searchable State/LGA navigation
+
+The deployed architecture is:
+
+```text
+GitHub
+   ↓
+Streamlit Community Cloud
+   ↓
+Neon PostgreSQL
+```
+
+---
+
+## 11. MVP Scope
+
+The main purpose of this MVP is to help users quickly identify **where education capacity pressure exists and how much confidence should be placed in the available reporting data**.
