@@ -1,6 +1,8 @@
 # Nigerian Education Capacity Monitor
 
-The **Nigerian Education Capacity Monitor** is a data engineering and analytics project that helps identify areas in Nigeria where learner demand may be putting pressure on available teachers and classrooms.
+🌐 **Live Dashboard:** [educationcapacitymonitor.streamlit.app](https://educationcapacitymonitor.streamlit.app)
+
+The Nigerian Education Capacity Monitor is a data engineering and analytics project that identifies areas where learner demand may exceed available teacher and classroom capacity.
 
 It transforms public Nigerian education data into an interactive dashboard that allows users to explore education capacity from the **national level down to individual States and LGAs**.
 
@@ -76,7 +78,7 @@ Data Confidence and Geographic Coverage are treated as separate measures.
 
 ## Data Source
 
-The project uses public **DNEMIS Annual School Census** data.
+This project uses public **DNEMIS Annual School Census** data.
 
 The main source datasets include:
 
@@ -165,7 +167,7 @@ education-capacity-monitor/
 
 ## Production Data
 
-The project produces two main PostgreSQL tables:
+This project produces two main PostgreSQL tables:
 
 ### `capacity_metrics`
 
