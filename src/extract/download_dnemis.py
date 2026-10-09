@@ -11,6 +11,7 @@ DNEMIS_FILES = {
     "pe.parquet": "https://emis.education.gov.ng/portal/data/census/pe/9cfd8dc4165763c0334362174a98faa9/pe.parquet",
     "constants.parquet": "https://emis.education.gov.ng/portal/data/census/constants/ece25d79995506f36891ed868e4ed923/constants.parquet",
     "fact_typeown.parquet": "https://emis.education.gov.ng/portal/data/census/fact_typeown/c1822fcb8efc2a56c33b70ca1e013b7d/fact_typeown.parquet",
+    "fact.parquet": "https://emis.education.gov.ng/portal/data/census/fact/c7b39c9c32ba5e0dce5e0e9f2a288c79/fact.parquet",
 }
 def download_parquet(name: str, url: str) -> dict:
     response = requests.get(url, timeout=60)

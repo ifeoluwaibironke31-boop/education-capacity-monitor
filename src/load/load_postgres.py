@@ -2,49 +2,50 @@ from pathlib import Path
 import os
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 
-# Find the project root automatically.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed" / "dnemis" / "2024_2025"
 
-# Location of the processed analytical dataset.
-DATA_PATH = (
-    PROJECT_ROOT
-    / "data"
-    / "processed"
-    / "dnemis"
-    / "2024_2025"
-    / "education_capacity_wide.parquet"
-)
+CAPACITY_PATH = PROCESSED_DIR / "education_capacity_wide.parquet"
+REPORTING_PATH = PROCESSED_DIR / "reporting_metrics.parquet"
 
-# Read PostgreSQL connection details from environment variables.
 DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "education_capacity")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_SSLMODE = os.getenv("DB_SSLMODE") or os.getenv("PGSSLMODE")
 
-def create_db_engine():
-    """Create a SQLAlchemy connection to PostgreSQL."""
+
+def get_engine():
     if not DB_PASSWORD:
-        raise ValueError(
-            "DB_PASSWORD is not set. "
-            "Set it as an environment variable before running this script."
-        )
+        raise ValueError("DB_PASSWORD environment variable is not set.")
 
-    connection_url = (
-        f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
-        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    url = URL.create(
+        "postgresql+psycopg2",
+        username=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
     )
 
-    return create_engine(connection_url)
+    connect_args = {"sslmode": DB_SSLMODE} if DB_SSLMODE else {}
+    return create_engine(url, connect_args=connect_args)
 
-def load_capacity_data(engine):
-    """Load the processed capacity dataset into PostgreSQL."""
-    df = pd.read_parquet(DATA_PATH)
 
-    # Replace the existing table so repeated pipeline runs remain reproducible.
+def load_table(engine, parquet_path, table_name):
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"Missing processed file: {parquet_path}")
+
+    df = pd.read_parquet(parquet_path)
+
+    print(f"\nLoading {table_name}...")
+    print(f"Source rows: {len(df):,}")
+
     df.to_sql(
-        "capacity_metrics",
+        table_name,
         engine,
         if_exists="replace",
         index=False,
@@ -52,31 +53,53 @@ def load_capacity_data(engine):
         chunksize=1000,
     )
 
-    return len(df)
-
-def verify_load(engine):
-    """Confirm that rows were successfully written to PostgreSQL."""
     with engine.connect() as connection:
-        result = connection.execute(
-            text("SELECT COUNT(*) FROM capacity_metrics")
+        loaded_rows = connection.execute(
+            text(f'SELECT COUNT(*) FROM "{table_name}"')
+        ).scalar_one()
+
+    if loaded_rows != len(df):
+        raise RuntimeError(
+            f"{table_name} row-count mismatch: "
+            f"expected {len(df):,}, loaded {loaded_rows:,}"
         )
 
-        return result.scalar()
+    print(f"Loaded successfully: {loaded_rows:,} rows")
+
 
 def main():
-    """Connect to PostgreSQL, load the dataset, and verify the result."""
-    print("Connecting to PostgreSQL...")
-    engine = create_db_engine()
+    engine = get_engine()
 
-    print("Loading capacity data...")
-    rows_loaded = load_capacity_data(engine)
+    try:
+        load_table(
+            engine,
+            CAPACITY_PATH,
+            "capacity_metrics",
+        )
 
-    print("Verifying load...")
-    rows_in_database = verify_load(engine)
+        load_table(
+            engine,
+            REPORTING_PATH,
+            "reporting_metrics",
+        )
 
-    print(f"Rows loaded from Parquet: {rows_loaded:,}")
-    print(f"Rows found in PostgreSQL: {rows_in_database:,}")
-    print("PostgreSQL load complete.")
+        print("\nPostgreSQL load completed successfully.")
+
+        with engine.connect() as connection:
+            capacity_count = connection.execute(
+                text("SELECT COUNT(*) FROM capacity_metrics")
+            ).scalar_one()
+
+            reporting_count = connection.execute(
+                text("SELECT COUNT(*) FROM reporting_metrics")
+            ).scalar_one()
+
+        print(f"capacity_metrics: {capacity_count:,}")
+        print(f"reporting_metrics: {reporting_count:,}")
+
+    finally:
+        engine.dispose()
+
 
 if __name__ == "__main__":
     main()
